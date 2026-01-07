@@ -100,34 +100,52 @@ async function initTables() {
 initTables();
 
 // ===== TASKS API =====
+// GET all tasks
 app.get('/tasks', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM tasks');
+
+    // Map snake_case DB fields → camelCase JSON
     const tasks = result.rows.map(t => ({
       id: t.id,
-      taskName: t.task_name,      // map snake_case → camelCase
-      branchName: t.branch_name,
+      taskName: t.task_name,      // ✅ mapped
+      branchName: t.branch_name,  // ✅ mapped
       description: t.description,
       status: t.status
     }));
+
     res.json(tasks);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching tasks:', err);
+    res.status(500).json({ error: 'Failed to fetch tasks' });
   }
 });
 
+// POST new task
 app.post('/tasks', async (req, res) => {
   const { taskName, branchName, description, status } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO tasks (taskName, branchName, description, status) VALUES ($1,$2,$3,$4) RETURNING id',
+      `INSERT INTO tasks (task_name, branch_name, description, status)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
       [taskName, branchName, description, status]
     );
-    res.json({ id: result.rows[0].id });
+
+    // Return camelCase JSON for the new task
+    const t = result.rows[0];
+    res.json({
+      id: t.id,
+      taskName: t.task_name,
+      branchName: t.branch_name,
+      description: t.description,
+      status: t.status
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error adding task:', err);
+    res.status(500).json({ error: 'Failed to add task' });
   }
 });
+
 
 app.delete('/tasks/:id', async (req, res) => {
   try {
