@@ -219,4 +219,16 @@ app.put('/pcs/:id', async (req, res) => {
 app.delete('/pcs/:id', async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM branch_pcs WHERE id=$1', [req.params.id]);
-    if (result.rowCount ===
+    if (result.rowCount === 0) return res.status(404).json({ error: 'PC spec not found' });
+    res.json({ message: 'PC spec deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});   // ✅ this closes the route
+// ⬆️ but after this your file just ends — no app.listen()
+// ===== START SERVER =====
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Server running at http://localhost:${PORT}`);
+});
+
