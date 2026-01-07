@@ -103,7 +103,14 @@ initTables();
 app.get('/tasks', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM tasks');
-    res.json(result.rows);
+    const tasks = result.rows.map(t => ({
+      id: t.id,
+      taskName: t.task_name,      // map snake_case → camelCase
+      branchName: t.branch_name,
+      description: t.description,
+      status: t.status
+    }));
+    res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
