@@ -14,6 +14,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false } // required for Render
 });
 console.log("Connected to DB:", process.env.DATABASE_URL);
+console.log("Using DB URL:", process.env.DATABASE_URL);
 // CSV import logic (optional, same as before)
 const csvPath = path.join(__dirname, 'public', 'Copy of BRANCHES PC SPECS.csv');
 function parseCSVLine(line) {
