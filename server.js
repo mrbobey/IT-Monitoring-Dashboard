@@ -13,7 +13,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false } // required for Render
 });
-
+console.log("Connected to DB:", process.env.DATABASE_URL);
 // CSV import logic (optional, same as before)
 const csvPath = path.join(__dirname, 'public', 'Copy of BRANCHES PC SPECS.csv');
 function parseCSVLine(line) {
@@ -211,4 +211,3 @@ app.get('/clear-db', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-console.log("Connected to DB:", process.env.DATABASE_URL);
