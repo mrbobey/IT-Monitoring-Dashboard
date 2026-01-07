@@ -104,7 +104,8 @@ initTables();
 app.get('/tasks', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM tasks');
-
+    console.log("✅ Raw rows from DB:", result.rows);
+    
     // Map snake_case DB fields → camelCase JSON
     const tasks = result.rows.map(t => ({
       id: t.id,
