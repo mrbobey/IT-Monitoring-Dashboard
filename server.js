@@ -1,13 +1,20 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { Pool } = require('pg');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
+// Connect to PostgreSQL using DATABASE_URL from environment variables
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false } // required for Render
+});
+
+// CSV import logic (optional, same as before)
 const csvPath = path.join(__dirname, 'public', 'Copy of BRANCHES PC SPECS.csv');
 function parseCSVLine(line) {
   const regex = /(?:"([^"]*)")|([^,]+)/g;
@@ -18,61 +25,48 @@ function parseCSVLine(line) {
   }
   return result.map(s => s.trim());
 }
-function importPCsIfNeeded(db) {
-  db.get('SELECT COUNT(*) as count FROM branch_pcs', (err, row) => {
-    if (err) return;
-    if (row.count === 0 && fs.existsSync(csvPath)) {
-      fs.readFile(csvPath, 'utf8', (err, data) => {
-        if (err) return;
-        const lines = data.split(/\r?\n/).filter(l => l.trim().length > 0);
-        let headerIdx = lines.findIndex(l => l.includes('BRANCH NAME'));
-        if (headerIdx === -1) return;
-        for (let i = headerIdx + 1; i < lines.length; i++) {
-          const row = parseCSVLine(lines[i]);
-          if (row.length < 11 || !row[0]) continue;
-          db.run(
-            `INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]]
-          );
-        }
-        console.log('PC specs imported from CSV.');
-      });
+async function importPCsIfNeeded() {
+  const result = await pool.query('SELECT COUNT(*) as count FROM branch_pcs');
+  if (result.rows[0].count === '0' && fs.existsSync(csvPath)) {
+    const data = fs.readFileSync(csvPath, 'utf8');
+    const lines = data.split(/\r?\n/).filter(l => l.trim().length > 0);
+    let headerIdx = lines.findIndex(l => l.includes('BRANCH NAME'));
+    if (headerIdx === -1) return;
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const row = parseCSVLine(lines[i]);
+      if (row.length < 11 || !row[0]) continue;
+      await pool.query(
+        `INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        row.slice(0, 11)
+      );
     }
-  });
+    console.log('PC specs imported from CSV.');
+  }
 }
 
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const db = new sqlite3.Database('./tasks.db', (err) => {
-  if (err) {
-    console.error('Could not connect to database', err);
-  } else {
-    importPCsIfNeeded(db);
-  }
-});
-
 // Create tables if not exist
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+async function initTables() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
     taskName TEXT,
     branchName TEXT,
     description TEXT,
     status TEXT
   )`);
-  db.run(`CREATE TABLE IF NOT EXISTS materials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+  await pool.query(`CREATE TABLE IF NOT EXISTS materials (
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     quantity INTEGER NOT NULL,
     unit TEXT,
-    taskId INTEGER,
-    FOREIGN KEY (taskId) REFERENCES tasks(id)
+    taskId INTEGER REFERENCES tasks(id)
   )`);
-  db.run(`CREATE TABLE IF NOT EXISTS branch_pcs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+  await pool.query(`CREATE TABLE IF NOT EXISTS branch_pcs (
+    id SERIAL PRIMARY KEY,
     branch_name TEXT,
     city TEXT,
     branch_code TEXT,
@@ -85,183 +79,135 @@ db.serialize(() => {
     psu TEXT,
     monitor TEXT
   )`);
-});
+  await importPCsIfNeeded();
+}
+initTables();
 
 // ===== TASKS API =====
-app.get('/tasks', (req, res) => {
-  db.all('SELECT * FROM tasks', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+app.get('/tasks', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM tasks');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-app.post('/tasks', (req, res) => {
+app.post('/tasks', async (req, res) => {
   const { taskName, branchName, description, status } = req.body;
-  db.run(
-    'INSERT INTO tasks (taskName, branchName, description, status) VALUES (?, ?, ?, ?)',
-    [taskName, branchName, description, status],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const result = await pool.query(
+      'INSERT INTO tasks (taskName, branchName, description, status) VALUES ($1,$2,$3,$4) RETURNING id',
+      [taskName, branchName, description, status]
+    );
+    res.json({ id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-app.delete('/tasks/:id', (req, res) => {
-  const { id } = req.params;
-  db.run('DELETE FROM tasks WHERE id = ?', [id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Task not found' });
+app.delete('/tasks/:id', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM tasks WHERE id=$1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Task not found' });
     res.json({ message: 'Task deleted successfully' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ===== MATERIALS API =====
-app.get('/materials', (req, res) => {
-  db.all('SELECT * FROM materials', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+app.get('/materials', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM materials');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-app.post('/materials', (req, res) => {
+app.post('/materials', async (req, res) => {
   const { name, quantity, unit, taskId } = req.body;
-  db.run(
-    'INSERT INTO materials (name, quantity, unit, taskId) VALUES (?, ?, ?, ?)',
-    [name, quantity, unit, taskId || null],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const result = await pool.query(
+      'INSERT INTO materials (name, quantity, unit, taskId) VALUES ($1,$2,$3,$4) RETURNING id',
+      [name, quantity, unit, taskId || null]
+    );
+    res.json({ id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-app.delete('/materials/:id', (req, res) => {
-  const { id } = req.params;
-  db.run('DELETE FROM materials WHERE id = ?', [id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Material not found' });
+app.put('/materials/:id', async (req, res) => {
+  const { name, quantity, unit, taskId } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE materials SET name=$1, quantity=$2, unit=$3, taskId=$4 WHERE id=$5',
+      [name, quantity, unit, taskId || null, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Material not found' });
+    res.json({ message: 'Material updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.delete('/materials/:id', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM materials WHERE id=$1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Material not found' });
     res.json({ message: 'Material deleted successfully' });
-  });
-});
-app.put('/materials/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, quantity, unit, taskId } = req.body;
-  db.run(
-    'UPDATE materials SET name = ?, quantity = ?, unit = ?, taskId = ? WHERE id = ?',
-    [name, quantity, unit, taskId || null, id],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      if (this.changes === 0) return res.status(404).json({ error: 'Material not found' });
-      res.json({ message: 'Material updated' });
-    }
-  );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ===== BRANCH PCS API =====
-app.get('/pcs', (req, res) => {
-  db.all('SELECT * FROM branch_pcs', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+app.get('/pcs', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM branch_pcs');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-app.post('/pcs', (req, res) => {
+app.post('/pcs', async (req, res) => {
   const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor } = req.body;
-  db.run(
-    'INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const result = await pool.query(
+      'INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
+      [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor]
+    );
+    res.json({ id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-app.delete('/pcs/:id', (req, res) => {
-  const { id } = req.params;
-  db.run('DELETE FROM branch_pcs WHERE id = ?', [id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'PC spec not found' });
+app.put('/pcs/:id', async (req, res) => {
+  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE branch_pcs SET branch_name=$1, city=$2, branch_code=$3, desktop_name=$4, pc_number=$5, motherboard=$6, processor=$7, storage=$8, ram=$9, psu=$10, monitor=$11 WHERE id=$12',
+      [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'PC spec not found' });
+    res.json({ message: 'PC spec updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.delete('/pcs/:id', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM branch_pcs WHERE id=$1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'PC spec not found' });
     res.json({ message: 'PC spec deleted successfully' });
-  });
-});
-app.put('/pcs/:id', (req, res) => {
-  const { id } = req.params;
-  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor } = req.body;
-  db.run(
-    'UPDATE branch_pcs SET branch_name = ?, city = ?, branch_code = ?, desktop_name = ?, pc_number = ?, motherboard = ?, processor = ?, storage = ?, ram = ?, psu = ?, monitor = ? WHERE id = ?',
-    [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor, id],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      if (this.changes === 0) return res.status(404).json({ error: 'PC spec not found' });
-      res.json({ message: 'PC spec updated' });
-    }
-  );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
-app.delete('/pcs/:id', (req, res) => {
-  const { id } = req.params;
-  db.run('DELETE FROM branch_pcs WHERE id = ?', [id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'PC spec not found' });
-    res.json({ message: 'PC spec deleted successfully' });
-  });
-});
-
-// PUT update PC spec by ID
-app.put('/pcs/:id', (req, res) => {
-  const { id } = req.params;
-  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor } = req.body;
-  db.run(
-    'UPDATE branch_pcs SET branch_name = ?, city = ?, branch_code = ?, desktop_name = ?, pc_number = ?, motherboard = ?, processor = ?, storage = ?, ram = ?, psu = ?, monitor = ? WHERE id = ?',
-    [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor, id],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      if (this.changes === 0) return res.status(404).json({ error: 'PC spec not found' });
-      res.json({ message: 'PC spec updated' });
-    }
-  );
-});
-
-// POST new material
-app.post('/materials', (req, res) => {
-  const { name, quantity, unit, taskId } = req.body;
-  db.run(
-    'INSERT INTO materials (name, quantity, unit, taskId) VALUES (?, ?, ?, ?)',
-    [name, quantity, unit, taskId || null],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
-});
-
-// DELETE material by ID
-app.delete('/materials/:id', (req, res) => {
-  const { id } = req.params;
-  db.run('DELETE FROM materials WHERE id = ?', [id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Material not found' });
-    res.json({ message: 'Material deleted successfully' });
-  });
-});
-
-// PUT update material by ID
-app.put('/materials/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, quantity, unit, taskId } = req.body;
-  db.run(
-    'UPDATE materials SET name = ?, quantity = ?, unit = ?, taskId = ? WHERE id = ?',
-    [name, quantity, unit, taskId || null, id],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      if (this.changes === 0) return res.status(404).json({ error: 'Material not found' });
-      res.json({ message: 'Material updated' });
-    }
-  );
-});
-app.get('/clear-db', (req, res) => {
-  db.run('DELETE FROM tasks', [], function (err) {
-    if (err) return res.status(500).json(err);
-    res.json({ deleted: this.changes });
-  });
+// Clear DB route (optional)
+app.get('/clear-db', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM tasks');
+    res.json({ deleted: result.rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
