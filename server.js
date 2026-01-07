@@ -227,7 +227,6 @@ app.delete('/pcs/:id', async (req, res) => {
 });   // ✅ this closes the route
 // ⬆️ but after this your file just ends — no app.listen()
 // ===== START SERVER =====
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
