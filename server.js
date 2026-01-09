@@ -91,7 +91,20 @@ async function initTables() {
       psu TEXT,
       monitor TEXT
     )`);
-    await importPCsIfNeeded();
+    await pool.query(`CREATE TABLE IF NOT EXISTS inventory (
+      id SERIAL PRIMARY KEY,
+      part_type TEXT NOT NULL,
+      part_name TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      status TEXT DEFAULT 'Available',
+      serial_number TEXT,
+      warranty_date TEXT,
+      condition TEXT DEFAULT 'Good',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    // CSV import disabled - commented out as per requirements
+    // await importPCsIfNeeded();
     console.log("✅ Tables initialized.");
   } catch (err) {
     console.error("❌ Error initializing tables:", err);
@@ -250,8 +263,90 @@ app.delete('/pcs/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});   // ✅ this closes the route
-// ⬆️ but after this your file just ends — no app.listen()
+});
+
+// ===== INVENTORY API =====
+// GET all inventory items
+app.get('/inventory', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM inventory ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching inventory:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory' });
+  }
+});
+
+// GET inventory summary (counts by status/type)
+app.get('/inventory/summary', async (req, res) => {
+  try {
+    const totalResult = await pool.query('SELECT COUNT(*) as total FROM inventory');
+    const availableResult = await pool.query("SELECT COUNT(*) as available FROM inventory WHERE status = 'Available'");
+    const dispatchedResult = await pool.query("SELECT COUNT(*) as dispatched FROM inventory WHERE status = 'Dispatched'");
+    const attentionResult = await pool.query("SELECT COUNT(*) as attention FROM inventory WHERE status = 'Needs Attention'");
+    
+    const typeResult = await pool.query(
+      `SELECT part_type, COUNT(*) as count FROM inventory GROUP BY part_type ORDER BY part_type`
+    );
+
+    res.json({
+      total: parseInt(totalResult.rows[0].total),
+      available: parseInt(availableResult.rows[0].available),
+      dispatched: parseInt(dispatchedResult.rows[0].dispatched),
+      needsAttention: parseInt(attentionResult.rows[0].attention),
+      byType: typeResult.rows
+    });
+  } catch (err) {
+    console.error('Error fetching inventory summary:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory summary' });
+  }
+});
+
+// POST new inventory item
+app.post('/inventory', async (req, res) => {
+  const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
+  try {
+    const result = await pool.query(
+      `INSERT INTO inventory (part_type, part_name, quantity, status, serial_number, warranty_date, condition)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [part_type, part_name, quantity, status || 'Available', serial_number, warranty_date, condition || 'Good']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error adding inventory item:', err);
+    res.status(500).json({ error: 'Failed to add inventory item' });
+  }
+});
+
+// PUT update inventory item
+app.put('/inventory/:id', async (req, res) => {
+  const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE inventory SET part_type=$1, part_name=$2, quantity=$3, status=$4, serial_number=$5, warranty_date=$6, condition=$7, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$8 RETURNING *`,
+      [part_type, part_name, quantity, status, serial_number, warranty_date, condition, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Inventory item not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating inventory item:', err);
+    res.status(500).json({ error: 'Failed to update inventory item' });
+  }
+});
+
+// DELETE inventory item
+app.delete('/inventory/:id', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM inventory WHERE id=$1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Inventory item not found' });
+    res.json({ message: 'Inventory item deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting inventory item:', err);
+    res.status(500).json({ error: 'Failed to delete inventory item' });
+  }
+});
+
 // ===== START SERVER =====
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
