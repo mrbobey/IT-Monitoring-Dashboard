@@ -155,43 +155,62 @@ async function loadPartTypes() {
 // ===== DISPLAY INVENTORY =====
 function displayInventory(items) {
   if (items.length === 0) {
-    inventoryContainer.innerHTML = '<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No inventory items found</p></div>';
+    inventoryContainer.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-inbox"></i>
+        <h4>No inventory items found</h4>
+        <p>Add parts to get started</p>
+      </div>
+    `;
     return;
   }
 
-  inventoryContainer.innerHTML = items.map(item => `
-    <div class="inventory-item ${item.status.toLowerCase().replace(' ', '-')}">
-      <div class="d-flex justify-content-between align-items-start mb-2">
-        <div>
-          <h6 class="mb-1">${item.part_name}</h6>
-          <small class="text-muted">${item.part_type}</small>
+  inventoryContainer.innerHTML = items.map(item => {
+    const statusClass = item.status.toLowerCase().replace(/\s+/g, '-');
+    const conditionClass = item.condition.toLowerCase();
+    
+    return `
+      <div class="inventory-card status-${statusClass}">
+        <div class="inventory-header">
+          <div>
+            <div class="part-name">${item.part_name}</div>
+            <div class="part-type-label"><i class="fa-solid fa-tag"></i> ${item.part_type}</div>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-sm btn-outline-warning" onclick="editPart(${item.id})" title="Edit">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deletePart(${item.id})" title="Delete">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
         </div>
-        <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-outline-primary" onclick="editPart(${item.id})" title="Edit">
-            <i class="fa-solid fa-pen-to-square"></i>
-          </button>
-          <button class="btn btn-sm btn-outline-danger" onclick="deletePart(${item.id})" title="Delete">
-            <i class="fa-solid fa-trash"></i>
-          </button>
-        </div>
-      </div>
 
-      <div class="mb-2">
-        <span class="status-badge status-${item.status.toLowerCase().replace(' ', '-')}">${item.status}</span>
-        <span class="condition-badge condition-${item.condition.toLowerCase()}">${item.condition}</span>
-        <span class="badge bg-info">Qty: ${item.quantity}</span>
-      </div>
+        <div class="mb-3">
+          <span class="status-badge ${statusClass}">${item.status}</span>
+          <span class="condition-badge ${conditionClass}">${item.condition}</span>
+          <span class="badge" style="background: rgba(74,215,246,0.2); color: #4ad7f6; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px;">Qty: ${item.quantity}</span>
+        </div>
 
-      <div class="row g-2 small text-muted">
-        <div class="col-6">
-          <i class="fa-solid fa-barcode"></i> ${item.serial_number || 'N/A'}
-        </div>
-        <div class="col-6">
-          <i class="fa-solid fa-calendar"></i> ${item.warranty_date ? formatDate(item.warranty_date) : 'N/A'}
+        <div class="spec-row">
+          <div class="spec-item">
+            <i class="fa-solid fa-barcode spec-icon"></i>
+            <div>
+              <div class="spec-label">Serial</div>
+              <div class="spec-value">${item.serial_number || 'N/A'}</div>
+            </div>
+          </div>
+          <div class="spec-item">
+            <i class="fa-solid fa-calendar spec-icon"></i>
+            <div>
+              <div class="spec-label">Warranty</div>
+              <div class="spec-value">${item.warranty_date ? formatDate(item.warranty_date) : 'N/A'}</div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // ===== FILTER INVENTORY =====
