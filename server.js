@@ -75,7 +75,14 @@ async function initTables() {
       name TEXT NOT NULL,
       quantity INTEGER NOT NULL,
       unit TEXT,
-      taskId INTEGER REFERENCES tasks(id)
+      taskId INTEGER REFERENCES tasks(id),
+      part_type TEXT,
+      status TEXT DEFAULT 'Available',
+      serial_number TEXT,
+      warranty_date TEXT,
+      condition TEXT DEFAULT 'Good',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     await pool.query(`CREATE TABLE IF NOT EXISTS branch_pcs (
       id SERIAL PRIMARY KEY,
@@ -90,18 +97,6 @@ async function initTables() {
       ram TEXT,
       psu TEXT,
       monitor TEXT
-    )`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS inventory (
-      id SERIAL PRIMARY KEY,
-      part_type TEXT NOT NULL,
-      part_name TEXT NOT NULL,
-      quantity INTEGER NOT NULL DEFAULT 0,
-      status TEXT DEFAULT 'Available',
-      serial_number TEXT,
-      warranty_date TEXT,
-      condition TEXT DEFAULT 'Good',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     // CSV import disabled - commented out as per requirements
     // await importPCsIfNeeded();
@@ -265,12 +260,25 @@ app.delete('/pcs/:id', async (req, res) => {
   }
 });
 
-// ===== INVENTORY API =====
+// ===== INVENTORY API (using materials table) =====
 // GET all inventory items
 app.get('/inventory', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM inventory ORDER BY created_at DESC');
-    res.json(result.rows);
+    const result = await pool.query('SELECT * FROM materials ORDER BY created_at DESC');
+    // Map database fields to frontend format
+    const inventory = result.rows.map(item => ({
+      id: item.id,
+      part_type: item.part_type || 'Other',
+      part_name: item.name,
+      quantity: item.quantity,
+      status: item.status || 'Available',
+      serial_number: item.serial_number,
+      warranty_date: item.warranty_date,
+      condition: item.condition || 'Good',
+      created_at: item.created_at,
+      updated_at: item.updated_at
+    }));
+    res.json(inventory);
   } catch (err) {
     console.error('Error fetching inventory:', err);
     res.status(500).json({ error: 'Failed to fetch inventory' });
@@ -280,13 +288,13 @@ app.get('/inventory', async (req, res) => {
 // GET inventory summary (counts by status/type)
 app.get('/inventory/summary', async (req, res) => {
   try {
-    const totalResult = await pool.query('SELECT COUNT(*) as total FROM inventory');
-    const availableResult = await pool.query("SELECT COUNT(*) as available FROM inventory WHERE status = 'Available'");
-    const dispatchedResult = await pool.query("SELECT COUNT(*) as dispatched FROM inventory WHERE status = 'Dispatched'");
-    const attentionResult = await pool.query("SELECT COUNT(*) as attention FROM inventory WHERE status = 'Needs Attention'");
+    const totalResult = await pool.query('SELECT COUNT(*) as total FROM materials WHERE part_type IS NOT NULL');
+    const availableResult = await pool.query("SELECT COUNT(*) as available FROM materials WHERE status = 'Available'");
+    const dispatchedResult = await pool.query("SELECT COUNT(*) as dispatched FROM materials WHERE status = 'Dispatched'");
+    const attentionResult = await pool.query("SELECT COUNT(*) as attention FROM materials WHERE status = 'Needs Attention'");
     
     const typeResult = await pool.query(
-      `SELECT part_type, COUNT(*) as count FROM inventory GROUP BY part_type ORDER BY part_type`
+      `SELECT part_type, COUNT(*) as count FROM materials WHERE part_type IS NOT NULL GROUP BY part_type ORDER BY part_type`
     );
 
     res.json({
@@ -307,11 +315,24 @@ app.post('/inventory', async (req, res) => {
   const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO inventory (part_type, part_name, quantity, status, serial_number, warranty_date, condition)
+      `INSERT INTO materials (name, quantity, part_type, status, serial_number, warranty_date, condition)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [part_type, part_name, quantity, status || 'Available', serial_number, warranty_date, condition || 'Good']
+      [part_name, quantity, part_type, status || 'Available', serial_number, warranty_date, condition || 'Good']
     );
-    res.json(result.rows[0]);
+    // Map back to frontend format
+    const item = result.rows[0];
+    res.json({
+      id: item.id,
+      part_type: item.part_type,
+      part_name: item.name,
+      quantity: item.quantity,
+      status: item.status,
+      serial_number: item.serial_number,
+      warranty_date: item.warranty_date,
+      condition: item.condition,
+      created_at: item.created_at,
+      updated_at: item.updated_at
+    });
   } catch (err) {
     console.error('Error adding inventory item:', err);
     res.status(500).json({ error: 'Failed to add inventory item' });
@@ -323,12 +344,24 @@ app.put('/inventory/:id', async (req, res) => {
   const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE inventory SET part_type=$1, part_name=$2, quantity=$3, status=$4, serial_number=$5, warranty_date=$6, condition=$7, updated_at=CURRENT_TIMESTAMP
+      `UPDATE materials SET name=$1, quantity=$2, part_type=$3, status=$4, serial_number=$5, warranty_date=$6, condition=$7, updated_at=CURRENT_TIMESTAMP
        WHERE id=$8 RETURNING *`,
-      [part_type, part_name, quantity, status, serial_number, warranty_date, condition, req.params.id]
+      [part_name, quantity, part_type, status, serial_number, warranty_date, condition, req.params.id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Inventory item not found' });
-    res.json(result.rows[0]);
+    // Map back to frontend format
+    const item = result.rows[0];
+    res.json({
+      id: item.id,
+      part_type: item.part_type,
+      part_name: item.name,
+      quantity: item.quantity,
+      status: item.status,
+      serial_number: item.serial_number,
+      warranty_date: item.warranty_date,
+      condition: item.condition,
+      updated_at: item.updated_at
+    });
   } catch (err) {
     console.error('Error updating inventory item:', err);
     res.status(500).json({ error: 'Failed to update inventory item' });
@@ -338,7 +371,7 @@ app.put('/inventory/:id', async (req, res) => {
 // DELETE inventory item
 app.delete('/inventory/:id', async (req, res) => {
   try {
-    const result = await pool.query('DELETE FROM inventory WHERE id=$1', [req.params.id]);
+    const result = await pool.query('DELETE FROM materials WHERE id=$1', [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Inventory item not found' });
     res.json({ message: 'Inventory item deleted successfully' });
   } catch (err) {
