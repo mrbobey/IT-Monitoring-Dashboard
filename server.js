@@ -6,6 +6,7 @@ const fs = require('fs');
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -60,30 +61,80 @@ async function importPCsIfNeeded() {
 // ===== Middleware =====
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(bodyParser.urlencoded({ extended: true }));
 
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'it-dashboard-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Serve static files (CSS, JS, images) but NOT HTML pages
+app.use('/style.css', express.static(path.join(__dirname, 'public', 'style.css')));
+app.use('/script.js', express.static(path.join(__dirname, 'public', 'script.js')));
+app.use('/pcs.js', express.static(path.join(__dirname, 'public', 'pcs.js')));
+app.use('/inventory.js', express.static(path.join(__dirname, 'public', 'inventory.js')));
+app.use('/auth.js', express.static(path.join(__dirname, 'public', 'auth.js')));
+app.use('/manifest.json', express.static(path.join(__dirname, 'public', 'manifest.json')));
+app.use('/Copy of BRANCHES PC SPECS.csv', express.static(path.join(__dirname, 'public', 'Copy of BRANCHES PC SPECS.csv')));
+
+// Auth middleware
 function requireLogin(req, res, next) {
   if (!req.session.user) {
     return res.redirect("/login");
   }
   next();
 }
-  // ==== routes ====
+
+// ===== ROUTE HANDLERS =====
+// Root redirect
 app.get("/", (req, res) => {
-  req.session.user ? res.redirect("/index.html") : res.redirect("/login");
+  if (req.session.user) {
+    return res.redirect("/index.html");
+  }
+  res.redirect("/login");
 });
 
+// Public routes - Login and Register
 app.get("/login", (req, res) => {
-  res.sendFile(__dirname + "/public/login.html");
+  if (req.session.user) {
+    return res.redirect("/index.html");
+  }
+  res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-app.post("/login", (req, res) => {
-  req.session.user = req.body.username;
-  res.redirect("/index.html");
+app.get("/login.html", (req, res) => {
+  res.redirect("/login");
 });
 
+app.get("/register", (req, res) => {
+  if (req.session.user) {
+    return res.redirect("/index.html");
+  }
+  res.sendFile(path.join(__dirname, "public", "register.html"));
+});
+
+app.get("/register.html", (req, res) => {
+  res.redirect("/register");
+});
+
+// Protected routes - Require login
 app.get("/index.html", requireLogin, (req, res) => {
-  res.sendFile(__dirname + "/public/index.html");
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.get("/inventory.html", requireLogin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "inventory.html"));
+});
+
+app.get("/pcs.html", requireLogin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "pcs.html"));
 });
 
 // ===== Initialize Tables =====
@@ -392,16 +443,14 @@ app.delete('/inventory/:id', async (req, res) => {
 });
 
 // ===== AUTHENTICATION API =====
-// In-memory session store (for production, use Redis or database)
-const sessions = new Map();
+// Note: Sessions are now managed by express-session middleware
 
-// Middleware to check authentication
+// Middleware to check authentication for API endpoints
 function requireAuth(req, res, next) {
-  const sessionId = req.headers['x-session-id'];
-  if (!sessionId || !sessions.has(sessionId)) {
+  if (!req.session.user) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  req.user = sessions.get(sessionId);
+  req.user = req.session.user;
   next();
 }
 
@@ -441,24 +490,19 @@ app.post('/auth/register', async (req, res) => {
     
     const user = result.rows[0];
     
-    // Create session
-    const sessionId = crypto.randomBytes(32).toString('hex');
-    sessions.set(sessionId, {
+    // Store user in session
+    req.session.user = {
       userId: user.id,
       username: user.username,
+      fullName: user.full_name,
+      email: user.email,
       role: user.role
-    });
+    };
     
     res.json({
+      success: true,
       message: 'Registration successful',
-      user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-        username: user.username,
-        role: user.role
-      },
-      sessionId
+      redirect: '/index.html'
     });
   } catch (err) {
     console.error('Error registering user:', err);
@@ -500,24 +544,19 @@ app.post('/auth/login', async (req, res) => {
       [user.id]
     );
     
-    // Create session
-    const sessionId = crypto.randomBytes(32).toString('hex');
-    sessions.set(sessionId, {
+    // Store user in session
+    req.session.user = {
       userId: user.id,
       username: user.username,
+      fullName: user.full_name,
+      email: user.email,
       role: user.role
-    });
+    };
     
     res.json({
+      success: true,
       message: 'Login successful',
-      user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-        username: user.username,
-        role: user.role
-      },
-      sessionId
+      redirect: '/index.html'
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -527,24 +566,24 @@ app.post('/auth/login', async (req, res) => {
 
 // Logout user
 app.post('/auth/logout', (req, res) => {
-  const sessionId = req.headers['x-session-id'];
-  if (sessionId) {
-    sessions.delete(sessionId);
-  }
-  res.json({ message: 'Logged out successfully' });
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error destroying session:', err);
+      return res.status(500).json({ error: 'Failed to logout' });
+    }
+    res.json({ success: true, message: 'Logged out successfully', redirect: '/login' });
+  });
 });
 
 // Check authentication status
 app.get('/auth/session', (req, res) => {
-  const sessionId = req.headers['x-session-id'];
-  if (!sessionId || !sessions.has(sessionId)) {
+  if (!req.session.user) {
     return res.status(401).json({ authenticated: false });
   }
   
-  const session = sessions.get(sessionId);
   res.json({
     authenticated: true,
-    user: session
+    user: req.session.user
   });
 });
 
@@ -571,4 +610,3 @@ app.get('/auth/profile', requireAuth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
-
