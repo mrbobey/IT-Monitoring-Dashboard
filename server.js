@@ -62,6 +62,30 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.redirect("/login");
+  }
+  next();
+
+  // ==== routes ====
+app.get("/", (req, res) => {
+  req.session.user ? res.redirect("/index.html") : res.redirect("/login");
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(__dirname + "/public/login.html");
+});
+
+app.post("/login", (req, res) => {
+  req.session.user = req.body.username;
+  res.redirect("/index.html");
+});
+
+app.get("/index.html", requireLogin, (req, res) => {
+  res.sendFile(__dirname + "/public/index.html");
+});
+
 // ===== Initialize Tables =====
 async function initTables() {
   try {
