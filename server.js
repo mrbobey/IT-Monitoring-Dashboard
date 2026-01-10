@@ -499,10 +499,18 @@ app.post('/auth/register', async (req, res) => {
       role: user.role
     };
     
-    res.json({
-      success: true,
-      message: 'Registration successful',
-      redirect: '/index.html'
+    // Save session explicitly before sending response
+    req.session.save((err) => {
+      if (err) {
+        console.error('Error saving session:', err);
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
+      
+      res.json({
+        success: true,
+        message: 'Registration successful',
+        redirect: '/index.html'
+      });
     });
   } catch (err) {
     console.error('Error registering user:', err);
@@ -553,10 +561,18 @@ app.post('/auth/login', async (req, res) => {
       role: user.role
     };
     
-    res.json({
-      success: true,
-      message: 'Login successful',
-      redirect: '/index.html'
+    // Save session explicitly before sending response
+    req.session.save((err) => {
+      if (err) {
+        console.error('Error saving session:', err);
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
+      
+      res.json({
+        success: true,
+        message: 'Login successful',
+        redirect: '/index.html'
+      });
     });
   } catch (err) {
     console.error('Error logging in:', err);
