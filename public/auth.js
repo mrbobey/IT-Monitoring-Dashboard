@@ -2,7 +2,6 @@
 // Handles login, registration, and session management
 
 const AUTH_API = '/auth';
-const SESSION_KEY = 'it_dashboard_session';
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -28,51 +27,16 @@ function showAlert(message, type = 'danger') {
   }, 5000);
 }
 
-// Store session
-function storeSession(sessionId, user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({
-    sessionId,
-    user,
-    timestamp: Date.now()
-  }));
-}
-
-// Get session
-function getSession() {
-  try {
-    const session = localStorage.getItem(SESSION_KEY);
-    if (!session) return null;
-    return JSON.parse(session);
-  } catch (err) {
-    console.error('Error reading session:', err);
-    return null;
-  }
-}
-
-// Clear session
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
-}
-
 // Check if user is authenticated
 async function checkAuth() {
-  const session = getSession();
-  if (!session) return null;
-  
   try {
-    const response = await fetch(`${AUTH_API}/session`, {
-      headers: {
-        'x-session-id': session.sessionId
-      }
-    });
+    const response = await fetch(`${AUTH_API}/session`);
     
     if (response.ok) {
       const data = await response.json();
-      return data.authenticated ? session.user : null;
+      return data.authenticated ? data.user : null;
     }
     
-    // Session invalid, clear it
-    clearSession();
     return null;
   } catch (err) {
     console.error('Error checking auth:', err);
@@ -84,7 +48,7 @@ async function checkAuth() {
 async function requireAuth() {
   const user = await checkAuth();
   if (!user) {
-    window.location.href = 'login.html';
+    window.location.href = '/login';
     return null;
   }
   return user;
@@ -98,7 +62,6 @@ if (loginForm) {
     
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
-    const rememberMe = document.getElementById('rememberMe').checked;
     
     // Validate
     if (!username || !password) {
@@ -120,14 +83,11 @@ if (loginForm) {
         return;
       }
       
-      // Store session
-      storeSession(data.sessionId, data.user);
-      
       showAlert('Login successful! Redirecting...', 'success');
       
       // Redirect to dashboard after 1 second
       setTimeout(() => {
-        window.location.href = 'index.html';
+        window.location.href = data.redirect || '/index.html';
       }, 1000);
       
     } catch (err) {
@@ -204,14 +164,11 @@ if (registerForm) {
         return;
       }
       
-      // Store session
-      storeSession(data.sessionId, data.user);
-      
       showAlert('Registration successful! Redirecting...', 'success');
       
       // Redirect to dashboard after 1 second
       setTimeout(() => {
-        window.location.href = 'index.html';
+        window.location.href = data.redirect || '/index.html';
       }, 1000);
       
     } catch (err) {
@@ -223,30 +180,23 @@ if (registerForm) {
 
 // ===== LOGOUT FUNCTION =====
 async function logout() {
-  const session = getSession();
-  if (session) {
-    try {
-      await fetch(`${AUTH_API}/logout`, {
-        method: 'POST',
-        headers: {
-          'x-session-id': session.sessionId
-        }
-      });
-    } catch (err) {
-      console.error('Logout error:', err);
-    }
+  try {
+    await fetch(`${AUTH_API}/logout`, {
+      method: 'POST'
+    });
+  } catch (err) {
+    console.error('Logout error:', err);
   }
   
-  clearSession();
-  window.location.href = 'login.html';
+  window.location.href = '/login';
 }
 
 // ===== AUTO-REDIRECT IF ALREADY LOGGED IN =====
 // For login and register pages
-if (window.location.pathname.includes('login.html') || window.location.pathname.includes('register.html')) {
+if (window.location.pathname.includes('login') || window.location.pathname.includes('register')) {
   checkAuth().then(user => {
     if (user) {
-      window.location.href = 'index.html';
+      window.location.href = '/index.html';
     }
   });
 }
@@ -255,4 +205,3 @@ if (window.location.pathname.includes('login.html') || window.location.pathname.
 window.checkAuth = checkAuth;
 window.requireAuth = requireAuth;
 window.logout = logout;
-window.getSession = getSession;
