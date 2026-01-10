@@ -3,6 +3,14 @@ const CACHE_KEY_INVENTORY = "inventory_items_cache";
 const CACHE_KEY_SUMMARY = "inventory_summary_cache";
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+// ===== CHECK AUTHENTICATION ON PAGE LOAD =====
+(async function() {
+  const user = await requireAuth();
+  if (user) {
+    console.log('✅ User authenticated on Inventory page:', user.username);
+  }
+})();
+
 // ===== CACHE UTILITY =====
 class CacheManager {
   static get(key) {
