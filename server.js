@@ -4,6 +4,8 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -117,6 +119,19 @@ async function initTables() {
       psu TEXT,
       monitor TEXT
     )`);
+
+    // Create users table for authentication
+    await pool.query(`CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'User',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_login TIMESTAMP
+    )`);
+    
     // CSV import disabled - commented out as per requirements
     // await importPCsIfNeeded();
     console.log("✅ Tables initialized.");
@@ -349,6 +364,182 @@ app.delete('/inventory/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting inventory item:', err);
     res.status(500).json({ error: 'Failed to delete inventory item' });
+  }
+});
+
+// ===== AUTHENTICATION API =====
+// In-memory session store (for production, use Redis or database)
+const sessions = new Map();
+
+// Middleware to check authentication
+function requireAuth(req, res, next) {
+  const sessionId = req.headers['x-session-id'];
+  if (!sessionId || !sessions.has(sessionId)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  req.user = sessions.get(sessionId);
+  next();
+}
+
+// Register new user
+app.post('/auth/register', async (req, res) => {
+  const { full_name, email, username, password } = req.body;
+  
+  try {
+    // Validate input
+    if (!full_name || !email || !username || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    
+    // Check if user already exists
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1 OR username = $2',
+      [email, username]
+    );
+    
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Email or username already exists' });
+    }
+    
+    // Hash password
+    const password_hash = await bcrypt.hash(password, 10);
+    
+    // Create user
+    const result = await pool.query(
+      `INSERT INTO users (full_name, email, username, password_hash, role) 
+       VALUES ($1, $2, $3, $4, 'User') RETURNING id, full_name, email, username, role, created_at`,
+      [full_name, email, username, password_hash]
+    );
+    
+    const user = result.rows[0];
+    
+    // Create session
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    sessions.set(sessionId, {
+      userId: user.id,
+      username: user.username,
+      role: user.role
+    });
+    
+    res.json({
+      message: 'Registration successful',
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        username: user.username,
+        role: user.role
+      },
+      sessionId
+    });
+  } catch (err) {
+    console.error('Error registering user:', err);
+    res.status(500).json({ error: 'Failed to register user' });
+  }
+});
+
+// Login user
+app.post('/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  
+  try {
+    // Validate input
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    
+    // Find user (can login with email or username)
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1 OR username = $1',
+      [username]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const user = result.rows[0];
+    
+    // Verify password
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Update last login
+    await pool.query(
+      'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
+      [user.id]
+    );
+    
+    // Create session
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    sessions.set(sessionId, {
+      userId: user.id,
+      username: user.username,
+      role: user.role
+    });
+    
+    res.json({
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        username: user.username,
+        role: user.role
+      },
+      sessionId
+    });
+  } catch (err) {
+    console.error('Error logging in:', err);
+    res.status(500).json({ error: 'Failed to login' });
+  }
+});
+
+// Logout user
+app.post('/auth/logout', (req, res) => {
+  const sessionId = req.headers['x-session-id'];
+  if (sessionId) {
+    sessions.delete(sessionId);
+  }
+  res.json({ message: 'Logged out successfully' });
+});
+
+// Check authentication status
+app.get('/auth/session', (req, res) => {
+  const sessionId = req.headers['x-session-id'];
+  if (!sessionId || !sessions.has(sessionId)) {
+    return res.status(401).json({ authenticated: false });
+  }
+  
+  const session = sessions.get(sessionId);
+  res.json({
+    authenticated: true,
+    user: session
+  });
+});
+
+// Get current user profile
+app.get('/auth/profile', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, full_name, email, username, role, created_at, last_login FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching profile:', err);
+    res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
 
