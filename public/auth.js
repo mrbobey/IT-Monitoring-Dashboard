@@ -30,7 +30,9 @@ function showAlert(message, type = 'danger') {
 // Check if user is authenticated
 async function checkAuth() {
   try {
-    const response = await fetch(`${AUTH_API}/session`);
+    const response = await fetch(`${AUTH_API}/session`, {
+      credentials: 'include' // Include cookies in request
+    });
     
     if (response.ok) {
       const data = await response.json();
@@ -73,6 +75,7 @@ if (loginForm) {
       const response = await fetch(`${AUTH_API}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies in request
         body: JSON.stringify({ username, password })
       });
       
@@ -149,6 +152,7 @@ if (registerForm) {
       const response = await fetch(`${AUTH_API}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies in request
         body: JSON.stringify({
           full_name: fullName,
           email,
@@ -182,7 +186,8 @@ if (registerForm) {
 async function logout() {
   try {
     await fetch(`${AUTH_API}/logout`, {
-      method: 'POST'
+      method: 'POST',
+      credentials: 'include' // Include cookies in request
     });
   } catch (err) {
     console.error('Logout error:', err);
