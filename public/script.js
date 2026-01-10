@@ -1,5 +1,19 @@
 const API_URL = "/tasks"; // same-origin API
 
+// ===== CHECK AUTHENTICATION ON PAGE LOAD =====
+// This ensures only logged-in users can access this page
+(async function() {
+  const user = await requireAuth();
+  if (user) {
+    console.log('✅ User authenticated:', user.username);
+    // Optional: Display user info in the header
+    const userInfo = document.querySelector('.user-info');
+    if (userInfo) {
+      userInfo.textContent = `Welcome, ${user.fullName || user.username}`;
+    }
+  }
+})();
+
 const branchContainer = document.getElementById("branchContainer");
 const taskForm = document.getElementById("taskForm");
 const taskNameInput = document.getElementById("taskName");
