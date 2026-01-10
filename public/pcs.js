@@ -1,4 +1,13 @@
 // PC Specs Monitoring - Card-based Design
+
+// ===== CHECK AUTHENTICATION ON PAGE LOAD =====
+(async function() {
+  const user = await requireAuth();
+  if (user) {
+    console.log('✅ User authenticated on PC Specs page:', user.username);
+  }
+})();
+
 let allPCs = [];
 let filteredPCs = [];
 
