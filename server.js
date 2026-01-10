@@ -67,7 +67,7 @@ function requireLogin(req, res, next) {
     return res.redirect("/login");
   }
   next();
-
+}
   // ==== routes ====
 app.get("/", (req, res) => {
   req.session.user ? res.redirect("/index.html") : res.redirect("/login");
