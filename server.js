@@ -59,19 +59,26 @@ async function importPCsIfNeeded() {
 }
 
 // ===== Middleware =====
-app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session configuration
+// CORS configuration - must allow credentials for session cookies
+app.use(cors({
+  origin: true, // Allow same-origin
+  credentials: true, // Allow cookies to be sent
+  optionsSuccessStatus: 200
+}));
+
+// Session configuration - must be after CORS
 app.use(session({
   secret: process.env.SESSION_SECRET || 'it-dashboard-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Set to false for development (localhost)
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax' // Allow same-site cookies
   }
 }));
 
@@ -86,9 +93,16 @@ app.use('/Copy of BRANCHES PC SPECS.csv', express.static(path.join(__dirname, 'p
 
 // Auth middleware
 function requireLogin(req, res, next) {
+  console.log('🔒 RequireLogin middleware - Session:', req.session);
+  console.log('🔒 RequireLogin middleware - User:', req.session.user);
+  console.log('🔒 RequireLogin middleware - Session ID:', req.sessionID);
+  
   if (!req.session.user) {
+    console.log('❌ No session user found, redirecting to /login');
     return res.redirect("/login");
   }
+  
+  console.log('✅ Session user found:', req.session.user.username);
   next();
 }
 
@@ -564,9 +578,13 @@ app.post('/auth/login', async (req, res) => {
     // Save session explicitly before sending response
     req.session.save((err) => {
       if (err) {
-        console.error('Error saving session:', err);
+        console.error('❌ Error saving session:', err);
         return res.status(500).json({ error: 'Failed to save session' });
       }
+      
+      console.log('✅ Session saved successfully');
+      console.log('✅ Session ID:', req.sessionID);
+      console.log('✅ Session data:', req.session);
       
       res.json({
         success: true,
