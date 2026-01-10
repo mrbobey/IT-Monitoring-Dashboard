@@ -74,8 +74,6 @@ async function initTables() {
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       quantity INTEGER NOT NULL,
-      unit TEXT,
-      taskId INTEGER REFERENCES tasks(id),
       part_type TEXT,
       status TEXT DEFAULT 'Available',
       serial_number TEXT,
@@ -182,53 +180,6 @@ app.delete('/tasks/:id', async (req, res) => {
     const result = await pool.query('DELETE FROM tasks WHERE id=$1', [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Task not found' });
     res.json({ message: 'Task deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ===== MATERIALS API =====
-app.get('/materials', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM materials');
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/materials', async (req, res) => {
-  const { name, quantity, unit, taskId } = req.body;
-  try {
-    const result = await pool.query(
-      'INSERT INTO materials (name, quantity, unit, taskId) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name, quantity, unit, taskId || null]
-    );
-    res.json({ id: result.rows[0].id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/materials/:id', async (req, res) => {
-  const { name, quantity, unit, taskId } = req.body;
-  try {
-    const result = await pool.query(
-      'UPDATE materials SET name=$1, quantity=$2, unit=$3, taskId=$4 WHERE id=$5',
-      [name, quantity, unit, taskId || null, req.params.id]
-    );
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Material not found' });
-    res.json({ message: 'Material updated' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/materials/:id', async (req, res) => {
-  try {
-    const result = await pool.query('DELETE FROM materials WHERE id=$1', [req.params.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Material not found' });
-    res.json({ message: 'Material deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
