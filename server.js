@@ -84,6 +84,27 @@ async function initTables() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
+    
+    // Add missing columns to existing materials table if they don't exist
+    const columnsToAdd = [
+      { name: 'part_type', definition: 'TEXT' },
+      { name: 'status', definition: "TEXT DEFAULT 'Available'" },
+      { name: 'serial_number', definition: 'TEXT' },
+      { name: 'warranty_date', definition: 'TEXT' },
+      { name: 'condition', definition: "TEXT DEFAULT 'Good'" },
+      { name: 'created_at', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
+      { name: 'updated_at', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
+    ];
+    
+    for (const col of columnsToAdd) {
+      try {
+        await pool.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS ${col.name} ${col.definition}`);
+      } catch (colErr) {
+        // Column might already exist, continue
+        console.log(`Column ${col.name} check:`, colErr.message);
+      }
+    }
+    
     await pool.query(`CREATE TABLE IF NOT EXISTS branch_pcs (
       id SERIAL PRIMARY KEY,
       branch_name TEXT,
