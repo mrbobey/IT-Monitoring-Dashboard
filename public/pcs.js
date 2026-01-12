@@ -28,7 +28,7 @@ function renderPCCards(pcs) {
   }
 
   container.innerHTML = pcs.map(pc => `
-    <div class="pc-card">
+    <div class="pc-card" style="cursor: pointer;" onclick="viewPCDetail(${pc.id})">
       <div class="pc-header">
         <div>
           <div class="pc-branch">${pc.branch_name || 'N/A'}</div>
@@ -37,7 +37,7 @@ function renderPCCards(pcs) {
             ${pc.branch_code ? `<span class="pc-code ms-2">${pc.branch_code}</span>` : ''}
           </div>
         </div>
-        <div class="action-buttons">
+        <div class="action-buttons" onclick="event.stopPropagation();">
           <button class="btn btn-sm btn-outline-warning" onclick="editPC(${pc.id})" title="Edit">
             <i class="fa-solid fa-pen"></i>
           </button>
@@ -114,6 +114,18 @@ function renderPCCards(pcs) {
           </div>
         </div>
       </div>
+      
+      ${pc.motherboard_serial ? `
+      <div class="spec-row">
+        <div class="spec-item">
+          <i class="fa-solid fa-barcode spec-icon"></i>
+          <div>
+            <div class="spec-label">MB Serial</div>
+            <div class="spec-value">${pc.motherboard_serial}</div>
+          </div>
+        </div>
+      </div>
+      ` : ''}
     </div>
   `).join('');
 }
@@ -273,12 +285,22 @@ function showPCModal(pc = null) {
                     <input type="text" name="motherboard" class="form-control">
                   </div>
                   <div class="col-md-6 mb-3">
+                    <label class="form-label">Motherboard Serial Number</label>
+                    <input type="text" name="motherboard_serial" class="form-control" placeholder="e.g., MB-12345">
+                  </div>
+                  <div class="col-md-6 mb-3">
                     <label class="form-label">PSU</label>
                     <input type="text" name="psu" class="form-control" placeholder="e.g., 500W">
                   </div>
-                  <div class="col-md-12 mb-3">
+                  <div class="col-md-6 mb-3">
                     <label class="form-label">Monitor</label>
                     <input type="text" name="monitor" class="form-control" placeholder="e.g., Dell 24-inch">
+                  </div>
+                  <div class="col-md-12 mb-3">
+                    <label class="form-label">PC Image</label>
+                    <input type="file" name="pc_image" id="pcImageInput" class="form-control" accept="image/jpeg,image/jpg,image/png">
+                    <small class="text-muted">Accepted formats: JPG, PNG (Max 5MB)</small>
+                    <div id="currentPCImagePreview" class="mt-2"></div>
                   </div>
                 </div>
               </div>
@@ -297,15 +319,19 @@ function showPCModal(pc = null) {
     document.getElementById('pcForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
-      const pcData = Object.fromEntries(formData.entries());
+      
+      // Get existing image path if editing
+      const existingPc = allPCs.find(p => p.id === currentEditId);
+      if (existingPc && existingPc.pc_image_path && !formData.get('pc_image').name) {
+        formData.append('existing_image_path', existingPc.pc_image_path);
+      }
       
       try {
         const url = currentEditId ? `/pcs/${currentEditId}` : '/pcs';
         const method = currentEditId ? 'PUT' : 'POST';
         const res = await fetch(url, {
           method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(pcData)
+          body: formData
         });
         if (!res.ok) throw new Error('Save failed');
         
@@ -330,6 +356,21 @@ function showPCModal(pc = null) {
       const input = form.elements[key];
       if (input && pc[key]) input.value = pc[key];
     });
+    
+    // Show current image preview
+    const previewDiv = document.getElementById('currentPCImagePreview');
+    if (pc.pc_image_path) {
+      previewDiv.innerHTML = `
+        <div style="margin-top: 10px;">
+          <small class="text-muted">Current Image:</small><br>
+          <img src="${pc.pc_image_path}" style="max-width: 200px; max-height: 150px; border-radius: 8px; margin-top: 5px;">
+        </div>
+      `;
+    } else {
+      previewDiv.innerHTML = '<small class="text-muted">No image uploaded</small>';
+    }
+  } else {
+    document.getElementById('currentPCImagePreview').innerHTML = '';
   }
   
   currentModal = new bootstrap.Modal(modal);
@@ -340,6 +381,140 @@ function showPCModal(pc = null) {
 window.editPC = function(id) {
   const pc = allPCs.find(p => p.id === id);
   if (pc) showPCModal(pc);
+};
+
+// View PC Detail
+window.viewPCDetail = function(id) {
+  const pc = allPCs.find(p => p.id === id);
+  if (!pc) return;
+  
+  // Create detail modal if it doesn't exist
+  if (!document.getElementById('pcDetailModal')) {
+    const modalHTML = `
+      <div class="modal fade" id="pcDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content" style="background: #1a2332; color: #e6f2fb; border: 1px solid rgba(255,255,255,0.1);">
+            <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <h5 class="modal-title">PC Specifications</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="pcDetailContent">
+              <!-- Content populated dynamically -->
+            </div>
+            <div class="modal-footer" style="border-top: 1px solid rgba(255,255,255,0.1);">
+              <button type="button" class="btn btn-warning" id="pcDetailEditBtn">
+                <i class="fa-solid fa-pen"></i> Edit
+              </button>
+              <button type="button" class="btn btn-danger" id="pcDetailDeleteBtn">
+                <i class="fa-solid fa-trash"></i> Delete
+              </button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+  }
+  
+  // Populate detail content
+  const detailContent = document.getElementById('pcDetailContent');
+  detailContent.innerHTML = `
+    <div style="text-align: center; margin-bottom: 20px;">
+      ${pc.pc_image_path 
+        ? `<img src="${pc.pc_image_path}" style="max-width: 100%; max-height: 350px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">` 
+        : '<div style="padding: 80px; background: rgba(255,255,255,0.03); border-radius: 12px; color: var(--muted);"><i class="fa-solid fa-desktop" style="font-size: 64px; opacity: 0.3;"></i><p style="margin-top: 15px;">No image available</p></div>'
+      }
+    </div>
+    
+    <div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+      <h5 style="color: var(--accent); margin-bottom: 10px;">${pc.branch_name || 'N/A'}</h5>
+      <div style="font-size: 14px; color: var(--muted);">
+        <i class="fa-solid fa-location-dot"></i> ${pc.city || 'N/A'}
+        ${pc.branch_code ? ` • Branch Code: ${pc.branch_code}` : ''}
+      </div>
+    </div>
+    
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Desktop Name</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-desktop" style="color: var(--accent); margin-right: 8px;"></i>${pc.desktop_name || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">PC Number</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-hashtag" style="color: var(--accent); margin-right: 8px;"></i>${pc.pc_number || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Processor</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-microchip" style="color: var(--accent); margin-right: 8px;"></i>${pc.processor || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">RAM</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-memory" style="color: var(--accent); margin-right: 8px;"></i>${pc.ram || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Storage</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-hard-drive" style="color: var(--accent); margin-right: 8px;"></i>${pc.storage || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">PSU</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-plug" style="color: var(--accent); margin-right: 8px;"></i>${pc.psu || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Motherboard</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-layer-group" style="color: var(--accent); margin-right: 8px;"></i>${pc.motherboard || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Motherboard Serial</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-barcode" style="color: var(--accent); margin-right: 8px;"></i>${pc.motherboard_serial || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="col-md-12">
+        <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+          <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Monitor</div>
+          <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-tv" style="color: var(--accent); margin-right: 8px;"></i>${pc.monitor || 'N/A'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Setup button handlers
+  document.getElementById('pcDetailEditBtn').onclick = () => {
+    bootstrap.Modal.getInstance(document.getElementById('pcDetailModal')).hide();
+    setTimeout(() => editPC(id), 300);
+  };
+  
+  document.getElementById('pcDetailDeleteBtn').onclick = () => {
+    bootstrap.Modal.getInstance(document.getElementById('pcDetailModal')).hide();
+    setTimeout(() => deletePC(id), 300);
+  };
+  
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('pcDetailModal'));
+  modal.show();
 };
 
 // Add PC button
