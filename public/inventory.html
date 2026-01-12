@@ -24,10 +24,16 @@
             box-shadow: 0 6px 18px rgba(2,6,23,0.45);
             background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
             border-left: 4px solid;
-            transition: transform 0.2s;
+            transition: all 0.3s ease;
+            cursor: pointer;
         }
         .stat-card:hover {
             transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(23,195,255,0.25);
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+        }
+        .stat-card:active {
+            transform: translateY(-2px);
         }
         .stat-card.total { 
             border-left-color: var(--accent);
@@ -70,13 +76,18 @@
             background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.03));
             border: 1px solid rgba(255,255,255,0.06);
             text-align: center;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
             box-shadow: 0 4px 12px rgba(2,6,23,0.3);
+            cursor: pointer;
         }
         .part-type-card:hover {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.08);
             border-color: var(--accent);
-            transform: translateY(-2px);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(23,195,255,0.2);
+        }
+        .part-type-card:active {
+            transform: translateY(-1px);
         }
         .part-type-count {
             font-size: 24px;
@@ -97,12 +108,17 @@
             padding: 18px;
             margin-bottom: 15px;
             box-shadow: 0 4px 12px rgba(2,6,23,0.4);
-            transition: all 0.2s;
+            transition: all 0.3s ease;
             border-left: 3px solid var(--accent);
+            cursor: pointer;
         }
         .inventory-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(23,195,255,0.15);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 24px rgba(23,195,255,0.2);
+            background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.02));
+        }
+        .inventory-card:active {
+            transform: translateY(-2px);
         }
         .inventory-card.status-available { border-left-color: #32d583; }
         .inventory-card.status-dispatched { border-left-color: #4ad7f6; }
@@ -443,6 +459,12 @@
             </div>
 
             <div class="mb-3">
+                <label for="partImage" class="form-label">Part Image</label>
+                <input type="file" id="partImage" class="form-control" accept="image/jpeg,image/jpg,image/png">
+                <small class="text-muted">Accepted formats: JPG, PNG (Max 5MB)</small>
+            </div>
+
+            <div class="mb-3">
                 <label for="condition" class="form-label">Condition</label>
                 <select id="condition" class="form-select">
                     <option value="Good">Good</option>
@@ -511,6 +533,13 @@
             </div>
 
             <div class="mb-3">
+                <label for="editPartImage" class="form-label">Part Image</label>
+                <input type="file" id="editPartImage" class="form-control" accept="image/jpeg,image/jpg,image/png">
+                <small class="text-muted">Leave empty to keep existing image</small>
+                <div id="currentImagePreview" class="mt-2"></div>
+            </div>
+
+            <div class="mb-3">
                 <label for="editCondition" class="form-label">Condition</label>
                 <select id="editCondition" class="form-select">
                     <option value="Excellent">Excellent</option>
@@ -534,6 +563,30 @@
                 <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('editPartModal').close()">Cancel</button>
             </div>
         </form>
+    </dialog>
+
+    <!-- Part Detail Modal -->
+    <dialog id="partDetailModal" style="max-width: 600px;">
+        <div style="padding: 25px;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 style="color: var(--accent); margin: 0;">Part Details</h5>
+                <button type="button" class="btn-close btn-close-white" onclick="document.getElementById('partDetailModal').close()"></button>
+            </div>
+            
+            <div id="partDetailContent">
+                <!-- Content will be populated dynamically -->
+            </div>
+            
+            <div class="d-flex gap-2 mt-4">
+                <button type="button" class="btn btn-warning" id="detailEditBtn">
+                    <i class="fa-solid fa-pen"></i> Edit
+                </button>
+                <button type="button" class="btn btn-danger" id="detailDeleteBtn">
+                    <i class="fa-solid fa-trash"></i> Delete
+                </button>
+                <button type="button" class="btn btn-outline-secondary ms-auto" onclick="document.getElementById('partDetailModal').close()">Close</button>
+            </div>
+        </div>
     </dialog>
 
     <!-- Bootstrap JS -->
