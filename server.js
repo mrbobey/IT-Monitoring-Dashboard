@@ -417,11 +417,19 @@ app.post('/pcs', upload.single('pc_image'), async (req, res) => {
   const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor } = req.body;
   const pc_image_path = req.file ? `/uploads/${req.file.filename}` : null;
   
+  console.log('💻 Adding PC:', { branch_name, desktop_name, motherboard_serial, pc_image_path });
+  
   try {
     const result = await pool.query(
       'INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor, pc_image_path) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *',
       [branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor, pc_image_path]
     );
+    console.log('✅ PC saved to database:');
+    console.log('   ID:', result.rows[0].id);
+    console.log('   Branch:', result.rows[0].branch_name);
+    console.log('   Desktop:', result.rows[0].desktop_name);
+    console.log('   Motherboard Serial:', result.rows[0].motherboard_serial || 'N/A');
+    console.log('   Image Path:', result.rows[0].pc_image_path || 'No image');
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -510,6 +518,8 @@ app.post('/inventory', upload.single('part_image'), async (req, res) => {
   const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
   const image_path = req.file ? `/uploads/${req.file.filename}` : null;
   
+  console.log('📦 Adding inventory item:', { part_name, part_type, quantity, image_path });
+  
   try {
     const result = await pool.query(
       `INSERT INTO materials (name, quantity, part_type, status, serial_number, warranty_date, condition, image_path)
@@ -518,6 +528,11 @@ app.post('/inventory', upload.single('part_image'), async (req, res) => {
     );
     // Map back to frontend format
     const item = result.rows[0];
+    console.log('✅ Inventory item saved to database:');
+    console.log('   ID:', item.id);
+    console.log('   Name:', item.name);
+    console.log('   Image Path:', item.image_path || 'No image');
+    console.log('   Created:', item.created_at);
     res.json({
       id: item.id,
       part_type: item.part_type,
@@ -806,6 +821,67 @@ app.get('/api/health', async (req, res) => {
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
       database: 'disconnected',
+      error: err.message
+    });
+  }
+});
+
+// Admin endpoint to view recent entries with images
+app.get('/api/recent-images', async (req, res) => {
+  try {
+    // Get recent materials with images
+    const materials = await pool.query(`
+      SELECT id, name, part_type, quantity, image_path, created_at 
+      FROM materials 
+      WHERE image_path IS NOT NULL
+      ORDER BY created_at DESC 
+      LIMIT 10
+    `);
+    
+    // Get recent PCs with images
+    const pcs = await pool.query(`
+      SELECT id, branch_name, desktop_name, motherboard_serial, pc_image_path 
+      FROM branch_pcs 
+      WHERE pc_image_path IS NOT NULL
+      ORDER BY id DESC 
+      LIMIT 10
+    `);
+    
+    // Count stats
+    const materialStats = await pool.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(image_path) as with_images
+      FROM materials
+    `);
+    
+    const pcStats = await pool.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(pc_image_path) as with_images
+      FROM branch_pcs
+    `);
+    
+    res.json({
+      status: 'success',
+      materials: {
+        items: materials.rows,
+        stats: {
+          total: parseInt(materialStats.rows[0].total),
+          withImages: parseInt(materialStats.rows[0].with_images)
+        }
+      },
+      pcs: {
+        items: pcs.rows,
+        stats: {
+          total: parseInt(pcStats.rows[0].total),
+          withImages: parseInt(pcStats.rows[0].with_images)
+        }
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
       error: err.message
     });
   }
