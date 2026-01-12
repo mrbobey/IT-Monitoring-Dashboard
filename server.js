@@ -190,7 +190,10 @@ app.get("/pcs.html", requireLogin, (req, res) => {
 
 // ===== Initialize Tables =====
 async function initTables() {
+  console.log('🔧 Initializing database schema...');
+  
   try {
+    // Create tasks table
     await pool.query(`CREATE TABLE IF NOT EXISTS tasks (
       id SERIAL PRIMARY KEY,
       taskName TEXT,
@@ -198,6 +201,9 @@ async function initTables() {
       description TEXT,
       status TEXT
     )`);
+    console.log('✅ Tasks table ready');
+    
+    // Create materials table with all required columns
     await pool.query(`CREATE TABLE IF NOT EXISTS materials (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -207,9 +213,11 @@ async function initTables() {
       serial_number TEXT,
       warranty_date TEXT,
       condition TEXT DEFAULT 'Good',
+      image_path TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
+    console.log('✅ Materials table ready');
     
     // Add missing columns to existing materials table if they don't exist
     const columnsToAdd = [
@@ -226,12 +234,14 @@ async function initTables() {
     for (const col of columnsToAdd) {
       try {
         await pool.query(`ALTER TABLE materials ADD COLUMN IF NOT EXISTS ${col.name} ${col.definition}`);
+        console.log(`✅ Materials.${col.name} verified`);
       } catch (colErr) {
         // Column might already exist, continue
-        console.log(`Column ${col.name} check:`, colErr.message);
+        console.log(`⚠️  Materials.${col.name}:`, colErr.message);
       }
     }
     
+    // Create branch_pcs table with all required columns
     await pool.query(`CREATE TABLE IF NOT EXISTS branch_pcs (
       id SERIAL PRIMARY KEY,
       branch_name TEXT,
@@ -248,6 +258,7 @@ async function initTables() {
       monitor TEXT,
       pc_image_path TEXT
     )`);
+    console.log('✅ Branch PCs table ready');
     
     // Add missing columns to existing branch_pcs table if they don't exist
     const pcColumnsToAdd = [
@@ -258,8 +269,9 @@ async function initTables() {
     for (const col of pcColumnsToAdd) {
       try {
         await pool.query(`ALTER TABLE branch_pcs ADD COLUMN IF NOT EXISTS ${col.name} ${col.definition}`);
+        console.log(`✅ Branch_pcs.${col.name} verified`);
       } catch (colErr) {
-        console.log(`Column ${col.name} check:`, colErr.message);
+        console.log(`⚠️  Branch_pcs.${col.name}:`, colErr.message);
       }
     }
 
@@ -274,14 +286,62 @@ async function initTables() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       last_login TIMESTAMP
     )`);
+    console.log('✅ Users table ready');
     
-    // CSV import disabled - commented out as per requirements
-    // await importPCsIfNeeded();
-    console.log("✅ Tables initialized.");
+    // Verify critical columns exist
+    await verifySchema();
+    
+    console.log("🎉 Database schema initialization complete!");
   } catch (err) {
     console.error("❌ Error initializing tables:", err);
+    throw err;
   }
 }
+
+// ===== Verify Schema =====
+async function verifySchema() {
+  console.log('🔍 Verifying schema...');
+  
+  try {
+    // Check materials table
+    const materialsColumns = await pool.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'materials'
+    `);
+    const materialsCols = materialsColumns.rows.map(r => r.column_name);
+    console.log('📋 Materials columns:', materialsCols.join(', '));
+    
+    if (!materialsCols.includes('image_path')) {
+      console.error('❌ CRITICAL: materials.image_path column missing!');
+    } else {
+      console.log('✅ materials.image_path exists');
+    }
+    
+    // Check branch_pcs table
+    const pcsColumns = await pool.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'branch_pcs'
+    `);
+    const pcsCols = pcsColumns.rows.map(r => r.column_name);
+    console.log('📋 Branch_pcs columns:', pcsCols.join(', '));
+    
+    if (!pcsCols.includes('motherboard_serial')) {
+      console.error('❌ CRITICAL: branch_pcs.motherboard_serial column missing!');
+    } else {
+      console.log('✅ branch_pcs.motherboard_serial exists');
+    }
+    
+    if (!pcsCols.includes('pc_image_path')) {
+      console.error('❌ CRITICAL: branch_pcs.pc_image_path column missing!');
+    } else {
+      console.log('✅ branch_pcs.pc_image_path exists');
+    }
+    
+  } catch (err) {
+    console.error('❌ Schema verification failed:', err);
+  }
+}
+
 initTables();
 
 // ===== TASKS API =====
@@ -702,6 +762,93 @@ app.get('/auth/profile', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Error fetching profile:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// ===== MULTER ERROR HANDLING =====
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    // Multer-specific errors
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ 
+        error: 'File too large', 
+        message: 'Image must be less than 5MB' 
+      });
+    }
+    return res.status(400).json({ 
+      error: 'Upload error', 
+      message: err.message 
+    });
+  } else if (err) {
+    // Other errors (e.g., file type validation)
+    console.error('Upload error:', err);
+    return res.status(400).json({ 
+      error: 'Invalid file', 
+      message: err.message 
+    });
+  }
+  next();
+});
+
+// ===== DIAGNOSTIC ENDPOINTS =====
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbCheck = await pool.query('SELECT NOW()');
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      dbTime: dbCheck.rows[0].now
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: err.message
+    });
+  }
+});
+
+// Schema verification endpoint (for debugging)
+app.get('/api/schema-check', async (req, res) => {
+  try {
+    // Check materials table
+    const materialsColumns = await pool.query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns 
+      WHERE table_name = 'materials'
+      ORDER BY ordinal_position
+    `);
+    
+    // Check branch_pcs table
+    const pcsColumns = await pool.query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns 
+      WHERE table_name = 'branch_pcs'
+      ORDER BY ordinal_position
+    `);
+    
+    res.json({
+      status: 'success',
+      tables: {
+        materials: {
+          columns: materialsColumns.rows,
+          hasImagePath: materialsColumns.rows.some(r => r.column_name === 'image_path')
+        },
+        branch_pcs: {
+          columns: pcsColumns.rows,
+          hasMotherboardSerial: pcsColumns.rows.some(r => r.column_name === 'motherboard_serial'),
+          hasPcImagePath: pcsColumns.rows.some(r => r.column_name === 'pc_image_path')
+        }
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      error: err.message
+    });
   }
 });
 
