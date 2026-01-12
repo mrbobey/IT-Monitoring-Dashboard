@@ -7,9 +7,45 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const session = require('express-session');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ===== Create uploads directory if it doesn't exist =====
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// ===== Multer Configuration for File Uploads =====
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|gif/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+  
+  if (mimetype && extname) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Only image files (JPG, PNG, GIF) are allowed!'));
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: fileFilter
+});
 
 // ===== PostgreSQL Connection =====
 const pool = new Pool({
@@ -90,6 +126,7 @@ app.use('/inventory.js', express.static(path.join(__dirname, 'public', 'inventor
 app.use('/auth.js', express.static(path.join(__dirname, 'public', 'auth.js')));
 app.use('/manifest.json', express.static(path.join(__dirname, 'public', 'manifest.json')));
 app.use('/Copy of BRANCHES PC SPECS.csv', express.static(path.join(__dirname, 'public', 'Copy of BRANCHES PC SPECS.csv')));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
 // Auth middleware
 function requireLogin(req, res, next) {
@@ -181,6 +218,7 @@ async function initTables() {
       { name: 'serial_number', definition: 'TEXT' },
       { name: 'warranty_date', definition: 'TEXT' },
       { name: 'condition', definition: "TEXT DEFAULT 'Good'" },
+      { name: 'image_path', definition: 'TEXT' },
       { name: 'created_at', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
       { name: 'updated_at', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
     ];
@@ -202,12 +240,28 @@ async function initTables() {
       desktop_name TEXT,
       pc_number TEXT,
       motherboard TEXT,
+      motherboard_serial TEXT,
       processor TEXT,
       storage TEXT,
       ram TEXT,
       psu TEXT,
-      monitor TEXT
+      monitor TEXT,
+      pc_image_path TEXT
     )`);
+    
+    // Add missing columns to existing branch_pcs table if they don't exist
+    const pcColumnsToAdd = [
+      { name: 'motherboard_serial', definition: 'TEXT' },
+      { name: 'pc_image_path', definition: 'TEXT' }
+    ];
+    
+    for (const col of pcColumnsToAdd) {
+      try {
+        await pool.query(`ALTER TABLE branch_pcs ADD COLUMN IF NOT EXISTS ${col.name} ${col.definition}`);
+      } catch (colErr) {
+        console.log(`Column ${col.name} check:`, colErr.message);
+      }
+    }
 
     // Create users table for authentication
     await pool.query(`CREATE TABLE IF NOT EXISTS users (
@@ -299,28 +353,32 @@ app.get('/pcs', async (req, res) => {
   }
 });
 
-app.post('/pcs', async (req, res) => {
-  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor } = req.body;
+app.post('/pcs', upload.single('pc_image'), async (req, res) => {
+  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor } = req.body;
+  const pc_image_path = req.file ? `/uploads/${req.file.filename}` : null;
+  
   try {
     const result = await pool.query(
-      'INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
-      [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor]
+      'INSERT INTO branch_pcs (branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor, pc_image_path) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *',
+      [branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor, pc_image_path]
     );
-    res.json({ id: result.rows[0].id });
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/pcs/:id', async (req, res) => {
-  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor } = req.body;
+app.put('/pcs/:id', upload.single('pc_image'), async (req, res) => {
+  const { branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor } = req.body;
+  const pc_image_path = req.file ? `/uploads/${req.file.filename}` : req.body.existing_image_path;
+  
   try {
     const result = await pool.query(
-      'UPDATE branch_pcs SET branch_name=$1, city=$2, branch_code=$3, desktop_name=$4, pc_number=$5, motherboard=$6, processor=$7, storage=$8, ram=$9, psu=$10, monitor=$11 WHERE id=$12',
-      [branch_name, city, branch_code, desktop_name, pc_number, motherboard, processor, storage, ram, psu, monitor, req.params.id]
+      'UPDATE branch_pcs SET branch_name=$1, city=$2, branch_code=$3, desktop_name=$4, pc_number=$5, motherboard=$6, motherboard_serial=$7, processor=$8, storage=$9, ram=$10, psu=$11, monitor=$12, pc_image_path=$13 WHERE id=$14 RETURNING *',
+      [branch_name, city, branch_code, desktop_name, pc_number, motherboard, motherboard_serial, processor, storage, ram, psu, monitor, pc_image_path, req.params.id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'PC spec not found' });
-    res.json({ message: 'PC spec updated' });
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -351,6 +409,7 @@ app.get('/inventory', async (req, res) => {
       serial_number: item.serial_number,
       warranty_date: item.warranty_date,
       condition: item.condition || 'Good',
+      image_path: item.image_path,
       created_at: item.created_at,
       updated_at: item.updated_at
     }));
@@ -387,13 +446,15 @@ app.get('/inventory/summary', async (req, res) => {
 });
 
 // POST new inventory item
-app.post('/inventory', async (req, res) => {
+app.post('/inventory', upload.single('part_image'), async (req, res) => {
   const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
+  const image_path = req.file ? `/uploads/${req.file.filename}` : null;
+  
   try {
     const result = await pool.query(
-      `INSERT INTO materials (name, quantity, part_type, status, serial_number, warranty_date, condition)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [part_name, quantity, part_type, status || 'Available', serial_number, warranty_date, condition || 'Good']
+      `INSERT INTO materials (name, quantity, part_type, status, serial_number, warranty_date, condition, image_path)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [part_name, quantity, part_type, status || 'Available', serial_number, warranty_date, condition || 'Good', image_path]
     );
     // Map back to frontend format
     const item = result.rows[0];
@@ -406,6 +467,7 @@ app.post('/inventory', async (req, res) => {
       serial_number: item.serial_number,
       warranty_date: item.warranty_date,
       condition: item.condition,
+      image_path: item.image_path,
       created_at: item.created_at,
       updated_at: item.updated_at
     });
@@ -416,13 +478,15 @@ app.post('/inventory', async (req, res) => {
 });
 
 // PUT update inventory item
-app.put('/inventory/:id', async (req, res) => {
+app.put('/inventory/:id', upload.single('part_image'), async (req, res) => {
   const { part_type, part_name, quantity, status, serial_number, warranty_date, condition } = req.body;
+  const image_path = req.file ? `/uploads/${req.file.filename}` : req.body.existing_image_path;
+  
   try {
     const result = await pool.query(
-      `UPDATE materials SET name=$1, quantity=$2, part_type=$3, status=$4, serial_number=$5, warranty_date=$6, condition=$7, updated_at=CURRENT_TIMESTAMP
-       WHERE id=$8 RETURNING *`,
-      [part_name, quantity, part_type, status, serial_number, warranty_date, condition, req.params.id]
+      `UPDATE materials SET name=$1, quantity=$2, part_type=$3, status=$4, serial_number=$5, warranty_date=$6, condition=$7, image_path=$8, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$9 RETURNING *`,
+      [part_name, quantity, part_type, status, serial_number, warranty_date, condition, image_path, req.params.id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Inventory item not found' });
     // Map back to frontend format
@@ -436,6 +500,7 @@ app.put('/inventory/:id', async (req, res) => {
       serial_number: item.serial_number,
       warranty_date: item.warranty_date,
       condition: item.condition,
+      image_path: item.image_path,
       updated_at: item.updated_at
     });
   } catch (err) {
