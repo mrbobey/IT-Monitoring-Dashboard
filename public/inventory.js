@@ -120,8 +120,52 @@ async function loadSummary() {
     document.getElementById('availableCount').textContent = summary.available || 0;
     document.getElementById('dispatchedCount').textContent = summary.dispatched || 0;
     document.getElementById('attentionCount').textContent = summary.needsAttention || 0;
+    
+    // Make stat cards clickable
+    makeStatCardsClickable();
   } catch (err) {
     console.error("Error loading summary:", err);
+  }
+}
+
+// ===== MAKE STAT CARDS CLICKABLE =====
+function makeStatCardsClickable() {
+  const statCards = document.querySelectorAll('.stat-card');
+  statCards.forEach(card => {
+    card.style.cursor = 'pointer';
+    card.onclick = null; // Remove any existing handlers
+    
+    if (card.classList.contains('total')) {
+      card.onclick = () => filterByStatus('');
+    } else if (card.classList.contains('available')) {
+      card.onclick = () => filterByStatus('Available');
+    } else if (card.classList.contains('dispatched')) {
+      card.onclick = () => filterByStatus('Dispatched');
+    } else if (card.classList.contains('attention')) {
+      card.onclick = () => filterByStatus('Needs Attention');
+    }
+  });
+}
+
+// ===== FILTER BY STATUS =====
+function filterByStatus(status) {
+  filterStatus.value = status;
+  filterInventory();
+  
+  // Highlight active card
+  document.querySelectorAll('.stat-card').forEach(card => {
+    card.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))';
+  });
+  
+  const activeCard = document.querySelector(
+    status === '' ? '.stat-card.total' :
+    status === 'Available' ? '.stat-card.available' :
+    status === 'Dispatched' ? '.stat-card.dispatched' :
+    '.stat-card.attention'
+  );
+  
+  if (activeCard) {
+    activeCard.style.background = 'linear-gradient(180deg, rgba(23,195,255,0.15), rgba(23,195,255,0.05))';
   }
 }
 
@@ -148,7 +192,7 @@ async function loadPartTypes() {
       const card = document.createElement('div');
       card.className = 'col-lg-2 col-md-3 col-sm-4 col-6';
       card.innerHTML = `
-        <div class="part-type-card">
+        <div class="part-type-card" style="cursor: pointer;" onclick="filterByPartType('${pt.part_type}')">
           <div class="part-type-count">${pt.count}</div>
           <div class="part-type-name">${pt.part_type}</div>
         </div>
@@ -157,6 +201,27 @@ async function loadPartTypes() {
     });
   } catch (err) {
     console.error("Error loading part types:", err);
+  }
+}
+
+// ===== FILTER BY PART TYPE =====
+function filterByPartType(partType) {
+  filterType.value = partType;
+  filterInventory();
+  
+  // Highlight active part type card
+  document.querySelectorAll('.part-type-card').forEach(card => {
+    card.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.03))';
+    card.style.borderColor = 'rgba(255,255,255,0.06)';
+  });
+  
+  const activeCard = Array.from(document.querySelectorAll('.part-type-card')).find(
+    card => card.querySelector('.part-type-name').textContent === partType
+  );
+  
+  if (activeCard) {
+    activeCard.style.background = 'linear-gradient(180deg, rgba(23,195,255,0.15), rgba(23,195,255,0.05))';
+    activeCard.style.borderColor = 'var(--accent)';
   }
 }
 
@@ -178,13 +243,13 @@ function displayInventory(items) {
     const conditionClass = item.condition.toLowerCase();
     
     return `
-      <div class="inventory-card status-${statusClass}">
+      <div class="inventory-card status-${statusClass}" style="cursor: pointer;" onclick="viewPartDetail(${item.id})">
         <div class="inventory-header">
           <div>
             <div class="part-name">${item.part_name}</div>
             <div class="part-type-label"><i class="fa-solid fa-tag"></i> ${item.part_type}</div>
           </div>
-          <div class="action-buttons">
+          <div class="action-buttons" onclick="event.stopPropagation();">
             <button class="btn btn-sm btn-outline-warning" onclick="editPart(${item.id})" title="Edit">
               <i class="fa-solid fa-pen"></i>
             </button>
@@ -257,21 +322,24 @@ function clearFilters() {
 addPartForm.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const newPart = {
-    part_type: document.getElementById('partType').value,
-    part_name: document.getElementById('partName').value,
-    quantity: parseInt(document.getElementById('quantity').value),
-    serial_number: document.getElementById('serialNumber').value,
-    warranty_date: document.getElementById('warrantyDate').value,
-    condition: document.getElementById('condition').value,
-    status: document.getElementById('status').value
-  };
+  const formData = new FormData();
+  formData.append('part_type', document.getElementById('partType').value);
+  formData.append('part_name', document.getElementById('partName').value);
+  formData.append('quantity', parseInt(document.getElementById('quantity').value));
+  formData.append('serial_number', document.getElementById('serialNumber').value);
+  formData.append('warranty_date', document.getElementById('warrantyDate').value);
+  formData.append('condition', document.getElementById('condition').value);
+  formData.append('status', document.getElementById('status').value);
+  
+  const imageFile = document.getElementById('partImage').files[0];
+  if (imageFile) {
+    formData.append('part_image', imageFile);
+  }
 
   try {
     const response = await fetch(API_BASE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newPart)
+      body: formData
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -303,6 +371,19 @@ async function editPart(id) {
   document.getElementById('editWarrantyDate').value = part.warranty_date || '';
   document.getElementById('editCondition').value = part.condition;
   document.getElementById('editStatus').value = part.status;
+  
+  // Show current image preview
+  const previewDiv = document.getElementById('currentImagePreview');
+  if (part.image_path) {
+    previewDiv.innerHTML = `
+      <div style="margin-top: 10px;">
+        <small class="text-muted">Current Image:</small><br>
+        <img src="${part.image_path}" style="max-width: 200px; max-height: 150px; border-radius: 8px; margin-top: 5px;">
+      </div>
+    `;
+  } else {
+    previewDiv.innerHTML = '<small class="text-muted">No image uploaded</small>';
+  }
 
   document.getElementById('editPartModal').showModal();
 }
@@ -311,21 +392,27 @@ editPartForm.addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const id = document.getElementById('editPartId').value;
-  const updatedPart = {
-    part_type: document.getElementById('editPartType').value,
-    part_name: document.getElementById('editPartName').value,
-    quantity: parseInt(document.getElementById('editQuantity').value),
-    serial_number: document.getElementById('editSerialNumber').value,
-    warranty_date: document.getElementById('editWarrantyDate').value,
-    condition: document.getElementById('editCondition').value,
-    status: document.getElementById('editStatus').value
-  };
+  const part = allInventoryItems.find(p => p.id == id);
+  
+  const formData = new FormData();
+  formData.append('part_type', document.getElementById('editPartType').value);
+  formData.append('part_name', document.getElementById('editPartName').value);
+  formData.append('quantity', parseInt(document.getElementById('editQuantity').value));
+  formData.append('serial_number', document.getElementById('editSerialNumber').value);
+  formData.append('warranty_date', document.getElementById('editWarrantyDate').value);
+  formData.append('condition', document.getElementById('editCondition').value);
+  formData.append('status', document.getElementById('editStatus').value);
+  formData.append('existing_image_path', part?.image_path || '');
+  
+  const imageFile = document.getElementById('editPartImage').files[0];
+  if (imageFile) {
+    formData.append('part_image', imageFile);
+  }
 
   try {
     const response = await fetch(`${API_BASE}/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedPart)
+      body: formData
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -377,6 +464,70 @@ filterCondition.addEventListener('change', filterInventory);
 
 // ===== INITIALIZE =====
 document.addEventListener('DOMContentLoaded', loadInventory);
+
+// ===== VIEW PART DETAIL =====
+function viewPartDetail(id) {
+  const part = allInventoryItems.find(p => p.id === id);
+  if (!part) return;
+  
+  const statusClass = part.status.toLowerCase().replace(/\s+/g, '-');
+  const conditionClass = part.condition.toLowerCase();
+  
+  const detailContent = document.getElementById('partDetailContent');
+  detailContent.innerHTML = `
+    <div style="text-align: center; margin-bottom: 20px;">
+      ${part.image_path 
+        ? `<img src="${part.image_path}" style="max-width: 100%; max-height: 300px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">` 
+        : '<div style="padding: 60px; background: rgba(255,255,255,0.03); border-radius: 12px; color: var(--muted);"><i class="fa-solid fa-image" style="font-size: 48px; opacity: 0.3;"></i><p style="margin-top: 15px;">No image available</p></div>'
+      }
+    </div>
+    
+    <div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; margin-bottom: 15px;">
+      <h6 style="color: var(--accent); font-size: 20px; margin-bottom: 15px;">${part.part_name}</h6>
+      
+      <div style="margin-bottom: 12px;">
+        <span class="status-badge ${statusClass}">${part.status}</span>
+        <span class="condition-badge ${conditionClass}">${part.condition}</span>
+        <span class="badge" style="background: rgba(74,215,246,0.2); color: #4ad7f6; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px;">Qty: ${part.quantity}</span>
+      </div>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+      <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Part Type</div>
+        <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-tag" style="color: var(--accent); margin-right: 8px;"></i>${part.part_type}</div>
+      </div>
+      
+      <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Serial Number</div>
+        <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-barcode" style="color: var(--accent); margin-right: 8px;"></i>${part.serial_number || 'N/A'}</div>
+      </div>
+      
+      <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Warranty Date</div>
+        <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-calendar" style="color: var(--accent); margin-right: 8px;"></i>${part.warranty_date ? formatDate(part.warranty_date) : 'N/A'}</div>
+      </div>
+      
+      <div style="background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+        <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 5px;">Quantity</div>
+        <div style="color: #fff; font-weight: 500;"><i class="fa-solid fa-cubes" style="color: var(--accent); margin-right: 8px;"></i>${part.quantity}</div>
+      </div>
+    </div>
+  `;
+  
+  // Setup button handlers
+  document.getElementById('detailEditBtn').onclick = () => {
+    document.getElementById('partDetailModal').close();
+    editPart(id);
+  };
+  
+  document.getElementById('detailDeleteBtn').onclick = () => {
+    document.getElementById('partDetailModal').close();
+    deletePart(id);
+  };
+  
+  document.getElementById('partDetailModal').showModal();
+}
 
 // Auto-refresh summary every 30 seconds (with cache)
 setInterval(async () => {
