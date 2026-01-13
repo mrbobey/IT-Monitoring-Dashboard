@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Management - IT Dashboard</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .stat-card {
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 6px 18px rgba(2,6,23,0.45);
+            background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+            border-left: 4px solid;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-4px);
+        }
+        .stat-card.total { 
+            border-left-color: var(--accent);
+        }
+        .stat-card.available { 
+            border-left-color: #32d583;
+        }
+        .stat-card.dispatched { 
+            border-left-color: #4ad7f6;
+        }
+        .stat-card.attention { 
+            border-left-color: #f6bd4a;
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-number.available-num { color: #32d583; }
+        .stat-number.dispatched-num { color: #4ad7f6; }
+        .stat-number.attention-num { color: #f6bd4a; }
+        
+        .stat-label {
+            font-size: 13px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .stat-icon {
+            font-size: 28px;
+            color: var(--accent);
+            opacity: 0.5;
+        }
+
+        .part-type-card {
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.03));
+            border: 1px solid rgba(255,255,255,0.06);
+            text-align: center;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(2,6,23,0.3);
+        }
+        .part-type-card:hover {
+            background: rgba(255,255,255,0.06);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+        .part-type-count {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .part-type-name {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .inventory-card {
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.03));
+            padding: 18px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 12px rgba(2,6,23,0.4);
+            transition: all 0.2s;
+            border-left: 3px solid var(--accent);
+        }
+        .inventory-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(23,195,255,0.15);
+        }
+        .inventory-card.status-available { border-left-color: #32d583; }
+        .inventory-card.status-dispatched { border-left-color: #4ad7f6; }
+        .inventory-card.status-needs-attention { border-left-color: #f6bd4a; }
+
+        .inventory-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .part-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .part-type-label {
+            font-size: 12px;
+            color: var(--muted);
+            background: rgba(255,255,255,0.03);
+            padding: 4px 10px;
+            border-radius: 20px;
+            margin-top: 3px;
+            display: inline-block;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-badge.available { background: rgba(50,213,131,0.2); color: #32d583; }
+        .status-badge.dispatched { background: rgba(74,215,246,0.2); color: #4ad7f6; }
+        .status-badge.needs-attention { background: rgba(246,189,74,0.2); color: #f6bd4a; }
+
+        .condition-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .condition-badge.excellent { background: rgba(50,213,131,0.2); color: #32d583; }
+        .condition-badge.good { background: rgba(74,215,246,0.2); color: #4ad7f6; }
+        .condition-badge.fair { background: rgba(246,189,74,0.2); color: #f6bd4a; }
+        .condition-badge.poor { background: rgba(255,99,99,0.2); color: #ff6363; }
+
+        .spec-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .spec-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .spec-label {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .spec-value {
+            font-size: 13px;
+            color: #fff;
+            font-weight: 500;
+        }
+        .spec-icon {
+            color: var(--accent);
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .search-filter-bar {
+            background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(2,6,23,0.3);
+        }
+        .search-box {
+            position: relative;
+            flex: 1;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px 15px 12px 42px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            color: #e6f2fb;
+            font-size: 14px;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(23,195,255,0.1);
+        }
+        .search-box i {
+            position: absolute;
+            left: 15px;
+            top: 14px;
+            color: var(--muted);
+        }
+
+        .filter-select {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            color: #e6f2fb;
+            font-size: 13px;
+        }
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+        .empty-state i {
+            font-size: 64px;
+            color: rgba(255,255,255,0.1);
+            margin-bottom: 20px;
+        }
+
+        /* Modal styling */
+        dialog {
+            background: #1a2332;
+            color: #e6f2fb;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 0;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        dialog::backdrop {
+            background: rgba(0,0,0,0.7);
+        }
+        dialog .form-label {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        dialog .form-control, dialog .form-select {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #e6f2fb;
+        }
+        dialog .form-control:focus, dialog .form-select:focus {
+            background: rgba(255,255,255,0.05);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(23,195,255,0.1);
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="navbar-custom mb-3">
+        <div class="container d-flex align-items-center justify-content-between">
+            <div>
+                <div class="brand-title h4 mb-0">Inventory Management</div>
+                <div class="brand-tag small">Track hardware before dispatch</div>
+            </div>
+            <div class="d-flex align-items-center">
+                <a href="index.html" class="btn btn-sm btn-outline-light me-2" title="Dashboard"><i class="fa-solid fa-list-check"></i></a>
+                <a href="pcs.html" class="btn btn-sm btn-outline-light me-2" title="PCs"><i class="fa-solid fa-desktop"></i></a>
+                <button class="btn btn-sm btn-outline-light me-2" onclick="document.getElementById('addPartModal').showModal()" title="Add Part"><i class="fa-solid fa-plus"></i> Add Part</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="logout()" title="Logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container my-4">
+        <!-- Statistics Section -->
+        <div class="row mb-4">
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card total">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number" id="totalCount">0</div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                        <div class="stat-icon"><i class="fa-solid fa-cube"></i></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card available">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number available-num" id="availableCount">0</div>
+                            <div class="stat-label">Available</div>
+                        </div>
+                        <div class="stat-icon" style="color: #32d583;"><i class="fa-solid fa-check-circle"></i></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card dispatched">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number dispatched-num" id="dispatchedCount">0</div>
+                            <div class="stat-label">Dispatched</div>
+                        </div>
+                        <div class="stat-icon" style="color: #4ad7f6;"><i class="fa-solid fa-paper-plane"></i></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card attention">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="stat-number attention-num" id="attentionCount">0</div>
+                            <div class="stat-label">Needs Attention</div>
+                        </div>
+                        <div class="stat-icon" style="color: #f6bd4a;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Part Types Grid -->
+        <h5 class="mb-3" style="color: var(--accent);">By Part Type</h5>
+        <div class="row mb-4" id="partTypesContainer">
+            <!-- Dynamically populated -->
+        </div>
+
+        <!-- Search & Filter Bar -->
+        <div class="search-filter-bar">
+            <div class="d-flex gap-3 flex-wrap align-items-center mb-3">
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="searchInput" placeholder="Search by name, serial, part type...">
+                </div>
+            </div>
+            <div class="d-flex gap-3 flex-wrap align-items-center">
+                <select id="filterType" class="filter-select">
+                    <option value="">All Types</option>
+                </select>
+                <select id="filterStatus" class="filter-select">
+                    <option value="">All Status</option>
+                    <option value="Available">Available</option>
+                    <option value="Dispatched">Dispatched</option>
+                    <option value="Needs Attention">Needs Attention</option>
+                </select>
+                <select id="filterCondition" class="filter-select">
+                    <option value="">All Conditions</option>
+                    <option value="Excellent">Excellent</option>
+                    <option value="Good">Good</option>
+                    <option value="Fair">Fair</option>
+                    <option value="Poor">Poor</option>
+                </select>
+                <button class="btn btn-sm btn-outline-light" onclick="clearFilters()">
+                    <i class="fa-solid fa-rotate-left"></i> Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- Inventory Items Container -->
+        <h5 class="mb-3" style="color: var(--accent);">Inventory Items</h5>
+        <div id="inventoryContainer">
+            <div class="loading-spinner">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-2 bg-dark text-white">
+        &copy; 2026 IT Monitoring Dashboard. Made by You.
+    </footer>
+
+    <!-- Add Part Modal -->
+    <dialog id="addPartModal">
+        <form id="addPartForm" style="padding: 25px; min-width: 450px;">
+            <h5 class="mb-3" style="color: var(--accent);">Add New Part</h5>
+
+            <div class="mb-3">
+                <label for="partType" class="form-label">Part Type *</label>
+                <select id="partType" class="form-select" required>
+                    <option value="">-- Select Type --</option>
+                    <option value="Motherboard">Motherboard</option>
+                    <option value="Processor">Processor</option>
+                    <option value="RAM">RAM</option>
+                    <option value="Hard Disk">Hard Disk</option>
+                    <option value="Power Supply">Power Supply</option>
+                    <option value="VGA Card">VGA Card</option>
+                    <option value="CPU Fan">CPU Fan</option>
+                    <option value="Mouse">Mouse</option>
+                    <option value="Keyboard">Keyboard</option>
+                    <option value="Monitor">Monitor</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="partName" class="form-label">Part Name *</label>
+                <input type="text" id="partName" class="form-control" placeholder="e.g., Dell UltraSharp 24" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="quantity" class="form-label">Quantity *</label>
+                <input type="number" id="quantity" class="form-control" value="1" min="1" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="serialNumber" class="form-label">Serial Number</label>
+                <input type="text" id="serialNumber" class="form-control" placeholder="e.g., SN-12345">
+            </div>
+
+            <div class="mb-3">
+                <label for="warrantyDate" class="form-label">Warranty Date</label>
+                <input type="date" id="warrantyDate" class="form-control">
+            </div>
+
+            <div class="mb-3">
+                <label for="condition" class="form-label">Condition</label>
+                <select id="condition" class="form-select">
+                    <option value="Good">Good</option>
+                    <option value="Excellent">Excellent</option>
+                    <option value="Fair">Fair</option>
+                    <option value="Poor">Poor</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="status" class="form-label">Status</label>
+                <select id="status" class="form-select">
+                    <option value="Available">Available</option>
+                    <option value="Dispatched">Dispatched</option>
+                    <option value="Needs Attention">Needs Attention</option>
+                </select>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">Add Part</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('addPartModal').close()">Cancel</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Edit Part Modal -->
+    <dialog id="editPartModal">
+        <form id="editPartForm" style="padding: 25px; min-width: 450px;">
+            <h5 class="mb-3" style="color: var(--accent);">Edit Part</h5>
+            <input type="hidden" id="editPartId">
+
+            <div class="mb-3">
+                <label for="editPartType" class="form-label">Part Type</label>
+                <select id="editPartType" class="form-select" required>
+                    <option value="Motherboard">Motherboard</option>
+                    <option value="Processor">Processor</option>
+                    <option value="RAM">RAM</option>
+                    <option value="Hard Disk">Hard Disk</option>
+                    <option value="Power Supply">Power Supply</option>
+                    <option value="VGA Card">VGA Card</option>
+                    <option value="CPU Fan">CPU Fan</option>
+                    <option value="Mouse">Mouse</option>
+                    <option value="Keyboard">Keyboard</option>
+                    <option value="Monitor">Monitor</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="editPartName" class="form-label">Part Name</label>
+                <input type="text" id="editPartName" class="form-control" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="editQuantity" class="form-label">Quantity</label>
+                <input type="number" id="editQuantity" class="form-control" min="0" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="editSerialNumber" class="form-label">Serial Number</label>
+                <input type="text" id="editSerialNumber" class="form-control">
+            </div>
+
+            <div class="mb-3">
+                <label for="editWarrantyDate" class="form-label">Warranty Date</label>
+                <input type="date" id="editWarrantyDate" class="form-control">
+            </div>
+
+            <div class="mb-3">
+                <label for="editCondition" class="form-label">Condition</label>
+                <select id="editCondition" class="form-select">
+                    <option value="Excellent">Excellent</option>
+                    <option value="Good">Good</option>
+                    <option value="Fair">Fair</option>
+                    <option value="Poor">Poor</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="editStatus" class="form-label">Status</label>
+                <select id="editStatus" class="form-select">
+                    <option value="Available">Available</option>
+                    <option value="Dispatched">Dispatched</option>
+                    <option value="Needs Attention">Needs Attention</option>
+                </select>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">Save Changes</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('editPartModal').close()">Cancel</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Custom Inventory Script -->
+    <script src="inventory.js"></script>
+</body>
+</html>

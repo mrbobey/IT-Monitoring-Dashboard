@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: it-monitoring-dashboard
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: DATABASE_URL
+        fromDatabase:
+          name: it-dashboard-db
+          property: connectionString
+    healthCheckPath: /
+    
+databases:
+  - name: it-dashboard-db
+    plan: free

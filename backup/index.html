@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Monitoring Dashboard</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Manifest for PWA support -->
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="navbar-custom mb-3">
+        <div class="container d-flex align-items-center justify-content-between">
+            <div>
+                <div class="brand-title h4 mb-0">IT Monitoring Dashboard</div>
+                <div class="brand-tag small">Track tasks & branches in real-time</div>
+            </div>
+            <div class="d-flex align-items-center">
+                <a href="pcs.html" class="btn btn-sm btn-outline-light me-2" title="PC Monitoring"><i class="fa-solid fa-desktop"></i></a>
+                <button class="btn btn-sm btn-outline-light me-2"><i class="fa-solid fa-bell"></i></button>
+                <button class="btn btn-sm btn-outline-light"><i class="fa-solid fa-gear"></i></button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container my-4">
+        <div class="row">
+
+            <!-- Sidebar -->
+            <div class="col-lg-3 col-md-4 mb-3">
+                <!-- Task Filters -->
+                <div id="sidebar" class="mb-3">
+                    <h5>Filter Tasks</h5>
+                    <button class="btn btn-outline-light w-100 mb-1 filter-btn" data-status="All" onclick="filterTasks('All')"><i class="fa-solid fa-list"></i> All Tasks</button>
+                    <button class="btn btn-warning w-100 mb-1 filter-btn" data-status="Pending" onclick="filterTasks('Pending')"><i class="fa-solid fa-hourglass-half"></i> Pending</button>
+                    <button class="btn btn-info w-100 mb-1 filter-btn" data-status="In Progress" onclick="filterTasks('In Progress')"><i class="fa-solid fa-spinner"></i> In Progress</button>
+                    <button class="btn btn-success w-100 mb-1 filter-btn" data-status="Completed" onclick="filterTasks('Completed')"><i class="fa-solid fa-check"></i> Completed</button>
+                </div>
+
+                <!-- Add Task Form -->
+                <div class="form-card shadow-sm">
+                    <h5 class="mb-3 text-white">Add Task</h5>
+                    <form id="taskForm">
+                        <input type="text" id="taskName" class="form-control mb-2 bg-input text-black" placeholder="Task Name" required>
+                        <input type="text" id="branchName" class="form-control mb-2 bg-input text-black" placeholder="Branch Name" required>
+                        <textarea id="taskDesc" class="form-control mb-2 bg-input text-black" placeholder="Description"></textarea>
+                        <select id="taskStatus" class="form-control mb-2 bg-input text-black" required>
+                            <option value="">Select Status</option>
+                            <option value="Pending">Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Completed">Completed</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary w-100"><i class="fa-solid fa-plus me-1"></i> Add Task</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Task Dashboard -->
+            <div class="col-lg-9 col-md-8">
+                <h3 class="text-info mb-3">Branches with Tasks</h3>
+                <div id="branchContainer" class="row g-3 w-100">
+                    <!-- JS will inject task cards here -->
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-2 bg-dark text-white">
+        &copy; 2026 IT Monitoring Dashboard. Made by You.
+    </footer>
+
+    <!-- JS -->
+    <script src="script.js"></script>
+</body>
+</html>
